@@ -23,7 +23,14 @@ echo "==> Esperando a MinIO"
 # El healthcheck del compose ya lo cubre, pero `mc alias set` es lo que confirma que
 # ademas las credenciales son las correctas: un MinIO sano con la clave equivocada dejaria
 # los buckets sin crear y el fallo apareceria mucho despues, al subir un archivo.
+intentos=0
 until mc alias set local "http://minio:9000" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null 2>&1; do
+  intentos=$((intentos + 1))
+  if [ "$intentos" -ge 60 ]; then
+    echo "ERROR: MinIO no acepta las credenciales tras 60 s. Revisa MINIO_ROOT_USER/PASSWORD" >&2
+    echo "       y la licencia: docker logs devstack-minio | grep -i license" >&2
+    exit 1
+  fi
   sleep 1
 done
 

@@ -32,6 +32,7 @@ versiona. De ahi salen las bases, los roles y los buckets.
 git clone git@github.com:{{ORG}}/dev-stack.git
 cd dev-stack
 cp productos.conf.example productos.conf   # una linea por producto
+nano minio.license                         # pega tu licencia de MinIO AIStor
 cp .env.example .env                       # opcional: solo si te choca un puerto
 docker compose -f compose-dev.yaml up -d
 ```
@@ -152,13 +153,27 @@ interno del publico con el que se firma, o haces que `minio` signifique lo mismo
 echo "127.0.0.1 minio" | sudo tee -a /etc/hosts
 ```
 
-### La imagen oficial de MinIO ya no existe
+### MinIO necesita licencia
 
-MinIO retiro sus imagenes publicas de Docker Hub y quay.io en 2025: `minio/minio` y
-`minio/mc` dan *pull access denied*. Este stack usa **`pgsty/minio`**, la build comunitaria
-del mismo codigo, con version fija. Si algun dia esa tambien desaparece, el sintoma es el
-mismo: el `up` falla y **todos** los servicios salen como `Interrupted`, aunque solo uno
-tenga el problema. Busca el que dice `pull access denied`.
+El stack usa la imagen oficial de **MinIO AIStor** (`quay.io/minio/aistor/minio`), que exige
+una licencia; la del plan gratuito basta. Se pide en la pagina de precios de MinIO AIStor
+(plan *Free*, *Get Started*) y se guarda en `minio.license`, junto al compose.
+
+`minio.license` **no se versiona**: el repo es publico y la licencia esta ligada a tu cuenta.
+En cada maquina hay que crearlo a mano.
+
+Sin licencia valida el servidor **arranca igual** pero en *offline mode*: rechaza toda
+operacion S3 y nunca se declara listo. El sintoma es `devstack-minio` en `unhealthy` y
+`minio-init` sin correr. Confirmalo con:
+
+```sh
+docker logs devstack-minio 2>&1 | grep -i license
+```
+
+`minio/minio` y `minio/mc` ya no existen en ningun registro (MinIO los retiro en 2025): si
+un `up` falla y **todos** los servicios salen como `Interrupted`, busca la linea
+`pull access denied`. Si prefieres no depender de una licencia, `pgsty/minio` es la build
+comunitaria del mismo codigo; el cambio esta descrito en `compose-dev.yaml`.
 
 ### Las bases logicas de Redis no aislan
 

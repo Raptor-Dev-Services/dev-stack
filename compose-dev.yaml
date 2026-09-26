@@ -77,18 +77,23 @@ services:
   # MinIO - buckets por producto
   # ---------------------------------------------------------------------------
   #
-  # IMAGEN: `pgsty/minio`, no `minio/minio`. MinIO retiro sus imagenes publicas en 2025:
-  # `minio/minio` y `minio/mc` ya no existen en Docker Hub ni en quay.io, y en una maquina
-  # sin cache el `up` entero falla con "pull access denied" (Compose aborta tambien los
-  # pulls de los demas servicios, que salen como "Interrupted"). `pgsty/minio` es la build
-  # comunitaria que mantiene Pigsty del mismo codigo: mismo binario, misma consola, trae
-  # `mc`, y publica amd64 y arm64. Version FIJA a proposito: es un fork, y `latest` podria
-  # cambiar de dueno o de comportamiento sin aviso.
+  # IMAGEN: la oficial de MinIO AIStor, que NECESITA LICENCIA (la gratuita basta). Va en
+  # `minio.license`, junto a este archivo, y NO se versiona. Sin licencia valida el
+  # servidor arranca en "offline mode", rechaza TODA operacion S3 y `mc ready local` nunca
+  # dice listo: el servicio queda `unhealthy` y minio-init no corre. Si lo ves asi, mira
+  # `docker logs devstack-minio | grep -i license`.
+  #
+  # `minio/minio` y `minio/mc` ya no existen en ningun registro (MinIO los retiro en 2025).
+  # Alternativa sin licencia: `pgsty/minio:RELEASE.2026-08-04T00-00-00Z`, la build
+  # comunitaria del mismo codigo; quita entonces el `--license` del command.
+  #
+  # Version FIJA: con `latest` una actualizacion de la licencia o del formato de datos
+  # llegaria sin aviso en el siguiente pull.
   minio:
-    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    image: quay.io/minio/aistor/minio:RELEASE.2026-09-19T17-05-25Z
     container_name: devstack-minio
     restart: unless-stopped
-    command: server /data --console-address ":9001"
+    command: server /data --console-address ":9001" --license /devstack/minio.license
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
@@ -97,6 +102,9 @@ services:
       - "${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - devstack-minio:/data
+      # El directorio y no el archivo suelto: si minio.license no existe, montarlo solo
+      # haria que Docker creara un DIRECTORIO con ese nombre.
+      - ./:/devstack:ro
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 5s
@@ -109,7 +117,7 @@ services:
   # no depende de una imagen de `mc` aparte. Ojo: NO trae grep, awk ni sed; el script
   # de buckets esta escrito en sh puro por eso.
   minio-init:
-    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    image: quay.io/minio/aistor/minio:RELEASE.2026-09-19T17-05-25Z
     container_name: devstack-minio-init
     depends_on:
       minio:
