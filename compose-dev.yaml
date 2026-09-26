@@ -76,8 +76,16 @@ services:
   # ---------------------------------------------------------------------------
   # MinIO - buckets por producto
   # ---------------------------------------------------------------------------
+  #
+  # IMAGEN: `pgsty/minio`, no `minio/minio`. MinIO retiro sus imagenes publicas en 2025:
+  # `minio/minio` y `minio/mc` ya no existen en Docker Hub ni en quay.io, y en una maquina
+  # sin cache el `up` entero falla con "pull access denied" (Compose aborta tambien los
+  # pulls de los demas servicios, que salen como "Interrupted"). `pgsty/minio` es la build
+  # comunitaria que mantiene Pigsty del mismo codigo: mismo binario, misma consola, trae
+  # `mc`, y publica amd64 y arm64. Version FIJA a proposito: es un fork, y `latest` podria
+  # cambiar de dueno o de comportamiento sin aviso.
   minio:
-    image: minio/minio:latest
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
     container_name: devstack-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
@@ -97,12 +105,11 @@ services:
 
   # Crea los buckets y se apaga. No es un servicio: es un paso de provisioning.
   #
-  # Usa la MISMA imagen que el servidor, que ya trae `mc` y `sh`. `minio/mc` ya no
-  # existe en Docker Hub ni en quay.io (MinIO retiro sus imagenes publicas en 2025):
-  # pedirla hace fallar el `up` entero con "pull access denied". La de `minio/minio`
-  # tampoco se puede volver a bajar -- solo funciona si esta en la cache local.
+  # Usa la MISMA imagen que el servidor, que ya trae `mc` y `sh`: una sola descarga, y
+  # no depende de una imagen de `mc` aparte. Ojo: NO trae grep, awk ni sed; el script
+  # de buckets esta escrito en sh puro por eso.
   minio-init:
-    image: minio/minio:latest
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
     container_name: devstack-minio-init
     depends_on:
       minio:

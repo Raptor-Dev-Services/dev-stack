@@ -152,12 +152,13 @@ interno del publico con el que se firma, o haces que `minio` signifique lo mismo
 echo "127.0.0.1 minio" | sudo tee -a /etc/hosts
 ```
 
-### La imagen de MinIO ya no se puede bajar
+### La imagen oficial de MinIO ya no existe
 
-MinIO retiro sus imagenes publicas de Docker Hub y quay.io en 2025. `minio/minio:latest`
-solo funciona si ya esta en la cache local de Docker: **no hagas `docker image prune -a`**
-sin antes un `docker save minio/minio:latest > minio.tar`. En una maquina nueva, carga ese
-tar con `docker load < minio.tar`.
+MinIO retiro sus imagenes publicas de Docker Hub y quay.io en 2025: `minio/minio` y
+`minio/mc` dan *pull access denied*. Este stack usa **`pgsty/minio`**, la build comunitaria
+del mismo codigo, con version fija. Si algun dia esa tambien desaparece, el sintoma es el
+mismo: el `up` falla y **todos** los servicios salen como `Interrupted`, aunque solo uno
+tenga el problema. Busca el que dice `pull access denied`.
 
 ### Las bases logicas de Redis no aislan
 
