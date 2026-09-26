@@ -1,0 +1,5 @@
+.DS_Store
+.env
+# Lo unico que sabe que productos existen. Ver productos.conf.example.
+productos.conf
+PUERTOS.local.md

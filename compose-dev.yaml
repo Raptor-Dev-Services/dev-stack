@@ -1,0 +1,187 @@
+# =============================================================================
+# compose-dev.yaml - LA infraestructura de desarrollo, compartida por todos los productos
+# =============================================================================
+# Un solo Postgres, un solo MinIO, un solo Redis, un solo buzon de correo y un solo
+# servidor de logs para todos los productos de la maquina, en lugar de una instancia de
+# cada cosa por repo peleandose los puertos.
+#
+#     cp productos.conf.example productos.conf     # una vez: que productos hay
+#     docker compose -f compose-dev.yaml up -d       # levanta la infraestructura
+#     docker compose -f compose-dev.yaml down        # la baja, conservando los datos
+#     docker compose -f compose-dev.yaml down -v     # la baja y BORRA los datos
+#
+# Las APIs NO estan aqui: cada producto las levanta desde su repo (`dotnet run`, o un
+# compose propio enganchado a la red `devstack`).
+#
+# -----------------------------------------------------------------------------
+# POR QUE LOS PUERTOS SON LOS ESTANDAR
+# -----------------------------------------------------------------------------
+# Con una instancia por producto habia que correr los puertos (5433, 5434, 9010...) para
+# no chocar. Con una sola, se vuelve a los de siempre: 5432, 9000, 6379, 1025. Si otro
+# contenedor ya tiene el 5432, este no arranca en silencio: `up` falla con el bind. Y una
+# conexion a la base equivocada es imposible porque cada producto tiene su propio rol
+# (ver init/postgres/00-bases-y-roles.sh).
+#
+# -----------------------------------------------------------------------------
+# LO QUE ESTE ARCHIVO **NO** COMPARTE
+# -----------------------------------------------------------------------------
+# Servicio de un producto = de ese producto. Los listeners de Stripe no estan aqui: cada
+# uno reenvia a UN endpoint con UN secreto de webhook propio, y uno compartido mandaria
+# los eventos de cobro de un producto a la API de otro.
+# =============================================================================
+
+name: devstack
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 17 - una base por producto
+  # ---------------------------------------------------------------------------
+  # 17 y no 16: Aurora PostgreSQL corre 17 desde el 1-may-2025, tiene minor LTS y soporte
+  # estandar hasta 2030. No 18 todavia: sin minor LTS designada.
+  #
+  # La version se mueve JUNTO con la que declara cada producto como objetivo. Desarrollar
+  # en una mayor mas nueva que la de produccion es el sentido peligroso: algo escrito en
+  # local puede no correr en el servidor, y nada lo avisa hasta el despliegue.
+  #
+  # Un cambio de mayor NO es `down -v` a secas: un postgres nuevo no arranca sobre datos
+  # de la mayor anterior. Respalda cada base con `pg_dump -Fc` antes y restaura despues,
+  # sobre todo si hay policies de RLS en scripts sueltos, que no vuelven solas.
+  postgres:
+    image: postgres:17-alpine
+    container_name: devstack-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_SUPERUSER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERPASS:-postgres}
+      # La base del superusuario. Las de los productos las crea el script de init.
+      POSTGRES_DB: postgres
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - devstack-pg:/var/lib/postgresql/data
+      # Solo se ejecuta con el volumen vacio. Para reprovisionar: `down -v` y `up`.
+      - ./init/postgres:/docker-entrypoint-initdb.d:ro
+      # El directorio entero y no el archivo: si `productos.conf` no existe, montarlo
+      # suelto haria que Docker creara un DIRECTORIO con ese nombre, y el init fallaria
+      # con un error que no apunta a la causa.
+      - ./:/devstack:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_SUPERUSER:-postgres} -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # ---------------------------------------------------------------------------
+  # MinIO - buckets por producto
+  # ---------------------------------------------------------------------------
+  minio:
+    image: minio/minio:latest
+    container_name: devstack-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - devstack-minio:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Crea los buckets y se apaga. No es un servicio: es un paso de provisioning.
+  #
+  # Usa la MISMA imagen que el servidor, que ya trae `mc` y `sh`. `minio/mc` ya no
+  # existe en Docker Hub ni en quay.io (MinIO retiro sus imagenes publicas en 2025):
+  # pedirla hace fallar el `up` entero con "pull access denied". La de `minio/minio`
+  # tampoco se puede volver a bajar -- solo funciona si esta en la cache local.
+  minio-init:
+    image: minio/minio:latest
+    container_name: devstack-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - ./init/minio:/init:ro
+      - ./:/devstack:ro
+    entrypoint: ["/bin/sh", "/init/crear-buckets.sh"]
+    # No reintentar: si falla, `docker compose logs minio-init` dice por que. Con
+    # restart, el error se pierde en un bucle y los buckets siguen sin crearse.
+    restart: "no"
+
+  # ---------------------------------------------------------------------------
+  # Redis - una base logica por producto
+  # ---------------------------------------------------------------------------
+  # Las bases logicas de Redis NO son un aislamiento de verdad: `FLUSHALL` las borra
+  # todas y no hay permisos por base. Bastan en desarrollo; en produccion cada producto
+  # tiene su propia instancia.
+  redis:
+    image: redis:7-alpine
+    container_name: devstack-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - devstack-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # ---------------------------------------------------------------------------
+  # Mailpit - el correo saliente de TODOS los productos, que no sale a internet
+  # ---------------------------------------------------------------------------
+  # Todos caen en la MISMA bandeja, http://localhost:8025, y se distinguen por el remitente.
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: devstack-mailpit
+    restart: unless-stopped
+    ports:
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "${MAILPIT_WEB_PORT:-8025}:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # ---------------------------------------------------------------------------
+  # Seq - logs estructurados
+  # ---------------------------------------------------------------------------
+  # En el stack comun para que dos Seq no se peleen el 5341 el dia que un segundo
+  # producto quiera mandar logs.
+  seq:
+    image: datalust/seq:latest
+    container_name: devstack-seq
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      SEQ_FIRSTRUN_NOAUTHENTICATION: "true"
+    ports:
+      - "${SEQ_PORT:-5341}:80"
+    volumes:
+      - devstack-seq:/data
+
+volumes:
+  devstack-pg:
+  devstack-minio:
+  devstack-redis:
+  devstack-seq:
+
+# Red con nombre fijo para que el compose de cada producto pueda engancharse a ella como
+# externa. Sin `name:`, Compose la llamaria `devstack_default` y cada repo tendria que
+# adivinar ese nombre derivado.
+networks:
+  default:
+    name: devstack
