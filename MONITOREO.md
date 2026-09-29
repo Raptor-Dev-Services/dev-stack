@@ -111,7 +111,8 @@ grafana/provisioning/
   dashboards/
     tableros.yml        el proveedor: carga todo lo de json/ en la carpeta "dev-stack"
     json/
-      servidor.json     el tablero "Servidor": CPU, memoria, carga y disco de la maquina
+      servidor.json               "Servidor": CPU, memoria, carga y disco, en una pantalla
+      servidor-detallado.json     "Servidor (detallado)": los 124 paneles de Node Exporter Full
 ```
 
 La fuente de datos llega con `editable: false`, y los tableros con `allowUiUpdates: false`: se
@@ -132,6 +133,16 @@ publico y consultando sus 10 paneles por la API publica, sin login. Para compart
 
 El disco se agrupa por dispositivo y no por punto de montaje: el mismo disco puede aparecer
 montado en varias rutas, y `/` no existe igual en todas las maquinas.
+
+**"Servidor (detallado)"** es *Node Exporter Full* (ID 1860, rev 45) con el mismo arreglo: se
+quitaron sus cuatro variables y se escribieron fijos la fuente (`devstack-prometheus`), el job
+(`node`) y la instancia (`devstack-host`). Conserva sus 124 paneles y 16 filas. Verificado igual:
+publico, y sus 124 paneles responden por la API publica sin login. Es obra de rfmoz
+(https://github.com/rfmoz/grafana-dashboards), licencia LGPL-3.0, y asi lo dice su descripcion.
+
+Si un dia se quiere una revision nueva de 1860, se regenera igual: bajar el JSON, vaciar
+`templating.list` y reemplazar `${ds_prometheus}`, `$job` y `$node` por esos tres valores.
+Las variables `$__...` (como `$__rate_interval`) son de Grafana y si funcionan en publico.
 
 ### Agregar un tablero que viaje con el repo
 
