@@ -35,3 +35,19 @@ scrape_configs:
   - job_name: prometheus
     static_configs:
       - targets: ["localhost:9090"]
+
+  # La maquina donde corre el stack (CPU, memoria, disco, red), si tiene node_exporter en el
+  # 9100 del HOST, fuera de Docker o con `network_mode: host`. Se alcanza por
+  # host.docker.internal, que el compose declara con `host-gateway`.
+  #
+  # No se publica por el tunel ni por un puerto: Prometheus lo lee aqui dentro y se mira en
+  # Grafana. En una maquina sin node_exporter este target sale `down`, sin mas efecto.
+  #
+  # Si en el servidor sale `down` aunque node_exporter corra: node_exporter tiene que escuchar
+  # en todas las interfaces (no en 127.0.0.1), y el firewall del host tiene que dejar pasar
+  # el trafico que viene de la red de Docker hacia el 9100.
+  - job_name: node
+    static_configs:
+      - targets: ["host.docker.internal:9100"]
+        labels:
+          instance: devstack-host
