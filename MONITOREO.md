@@ -108,10 +108,30 @@ cuesta nada, y empezar de cero es mas barato que respaldar.
 grafana/provisioning/
   datasources/
     prometheus.yml      la fuente de datos, apuntando a http://prometheus:9090
-  dashboards/           (vacia hoy) proveedores de tableros, ver abajo
+  dashboards/
+    tableros.yml        el proveedor: carga todo lo de json/ en la carpeta "dev-stack"
+    json/
+      servidor.json     el tablero "Servidor": CPU, memoria, carga y disco de la maquina
 ```
 
-La fuente de datos llega con `editable: false`: se cambia en el archivo, no en la interfaz.
+La fuente de datos llega con `editable: false`, y los tableros con `allowUiUpdates: false`: se
+cambian en el archivo, no en la interfaz.
+
+### El tablero "Servidor", y por que no basta con "Node Exporter Full"
+
+**Un dashboard publico (compartido con externos) no resuelve variables de plantilla.** Quien
+lo abre sin sesion recibe las variables vacias, y cada panel que las usa falla con
+`Internal Server Error`. *Node Exporter Full* (ID 1860) depende de cuatro, incluida la fuente de
+datos misma (`${ds_prometheus}`): para ti se ve bien y para un externo todo sale en error.
+
+`servidor.json` esta hecho para compartirse: consultas fijas sobre `job="node"` e
+`instance="devstack-host"`, y la fuente por su uid, `devstack-prometheus`. Verificado haciendolo
+publico y consultando sus 10 paneles por la API publica, sin login. Para compartirlo:
+*Dashboards -> dev-stack -> Servidor -> Share -> Share externally*. El link sale con
+`GRAFANA_ROOT_URL`.
+
+El disco se agrupa por dispositivo y no por punto de montaje: el mismo disco puede aparecer
+montado en varias rutas, y `/` no existe igual en todas las maquinas.
 
 ### Agregar un tablero que viaje con el repo
 
@@ -120,25 +140,13 @@ clon:
 
 1. Arma el tablero en la interfaz, y exportalo: *Share* -> *Export* -> *Save to file* (JSON).
 2. Guarda el JSON en `grafana/provisioning/dashboards/json/<nombre>.json`.
-3. Si todavia no existe, crea `grafana/provisioning/dashboards/tableros.yml`:
-
-   ```yaml
-   apiVersion: 1
-   providers:
-     - name: dev-stack
-       folder: dev-stack
-       type: file
-       disableDeletion: true
-       allowUiUpdates: false
-       options:
-         path: /etc/grafana/provisioning/dashboards/json
-   ```
-
-4. `docker compose -f compose-dev.yaml restart grafana`.
+3. `docker compose -f compose-dev.yaml restart grafana` (o espera un minuto: el proveedor
+   revisa la carpeta cada 60 segundos).
 
 Al exportar, revisa que el JSON apunte a la fuente por su `uid`, `devstack-prometheus`, y que
 no lleve nombres de productos en los titulos: el repo es publico. Filtra por producto con una
-variable del tablero sobre la etiqueta `service_name`.
+variable del tablero sobre la etiqueta `service_name` -- **salvo que el tablero se vaya a
+compartir con externos**: ahi, sin variables.
 
 ### Respaldar y empezar de cero
 

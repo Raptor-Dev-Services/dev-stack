@@ -1,0 +1,14 @@
+# Tableros que Grafana carga solo al arrancar, desde grafana/provisioning/dashboards/json/.
+# Viajan con el repo: un clon limpio los trae. Se editan en el JSON, no en la interfaz
+# (allowUiUpdates: false), porque lo que se cambiara ahi se perderia al reiniciar.
+apiVersion: 1
+
+providers:
+  - name: dev-stack
+    folder: dev-stack
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 60
+    options:
+      path: /etc/grafana/provisioning/dashboards/json
