@@ -104,14 +104,60 @@ Estos valores del `.env` cambian respecto a tu maquina:
 
 | Variable | En tu maquina | En el servidor |
 |---|---|---|
-| `DEVSTACK_BIND` | `127.0.0.1` | la IP de la red privada o VPN; `0.0.0.0` solo con firewall |
+| `DEVSTACK_BIND` | `127.0.0.1` | `127.0.0.1` si se publica por un tunel (ver abajo); si no, la IP de la red privada o VPN; `0.0.0.0` solo con firewall |
 | `DEVSTACK_HOST` | `localhost` | el nombre o IP con que el navegador llega al servidor |
 | `GRAFANA_ROOT_URL` | `http://localhost:3000` | la URL publica de Grafana, p. ej. `https://grafana.tudominio.com/`. Sin ella, un dashboard publico compartido llega apuntando a `localhost` |
 | contrasenas | de desarrollo | **propias**: ya no es solo tu maquina |
 
 **Varios servicios no piden credenciales**: la ingesta de Seq, el receptor OTLP de Prometheus,
 Redis y Mailpit. Con `DEVSTACK_BIND=0.0.0.0` en un servidor con IP publica, cualquiera puede leer
-y escribir en ellos. Y antes del primer `up`, los permisos de `data/`: ver [MONITOREO.md](MONITOREO.md).
+y escribir en ellos. Los permisos de `data/` en Linux ya no son un paso manual: los resuelve
+`permisos-init` en cada `up` (ver [MONITOREO.md](MONITOREO.md)).
+
+### Detras de un tunel de Cloudflare
+
+El tunel (`cloudflared`) entra al servidor desde adentro, asi que **nada tiene que escuchar en
+una IP publica**: se deja `DEVSTACK_BIND=127.0.0.1` y cada ruta del tunel apunta al puerto
+local. Si `cloudflared` corre en un contenedor en vez de en el host, ahi `localhost` es el
+propio contenedor: tiene que estar en la red `devstack` y apuntar por nombre y puerto interno.
+
+**Se publican solo las interfaces web**, y cada hostname detras de **Cloudflare Access** con una
+politica que deje pasar solo a quien corresponde:
+
+| Ruta del tunel | `cloudflared` en el host | `cloudflared` en la red `devstack` |
+|---|---|---|
+| Dashy | `http://localhost:4000` | `http://dashy:8080` |
+| Grafana | `http://localhost:3000` | `http://grafana:3000` |
+| Seq (interfaz) | `http://localhost:5380` | `http://seq:80` |
+| Uptime Kuma | `http://localhost:3001` | `http://uptime-kuma:3001` |
+| Prometheus | `http://localhost:9090` | `http://prometheus:9090` |
+| MinIO (consola) | `http://localhost:9001` | `http://minio:9001` |
+| Mailpit (bandeja) | `http://localhost:8025` | `http://mailpit:8025` |
+
+Ojo con Mailpit: su bandeja web es el **8025**. El 1110 que muestra `docker ps` es su POP3
+interno, y una ruta ahi no carga.
+
+**No se publican**, ni con Access: Postgres, Redis, el SMTP de Mailpit (1025), la ingesta de
+Seq (5341), el receptor OTLP de Prometheus, el node-exporter ni el proxy del socket de Docker.
+Los tres primeros ni siquiera son HTTP, y los productos del mismo servidor ya los alcanzan por
+la red `devstack`. **Mailpit es el mas delicado** de los publicados: su bandeja trae los correos
+de recuperacion de contrasena y los codigos de acceso de todos los productos.
+
+**Dashboard publico de Grafana** (compartido con externos): con Access delante, a un externo
+tambien le pediria login. En la aplicacion de Access de Grafana, una politica **Bypass** para
+`/public-dashboards/*`, `/api/public/*` y `/public/*` deja pasar solo eso. Y
+`GRAFANA_ROOT_URL` tiene que ser la URL publica, o el link sale con `localhost`. Que tablero
+compartir: [MONITOREO.md](MONITOREO.md), seccion del tablero "Servidor".
+
+**Limitacion conocida -- los links de Dashy.** Dashy arma cada link como
+`http://DEVSTACK_HOST:puerto`, y detras de un tunel cada servicio tiene su propio hostname con
+HTTPS y sin puerto: esos links no sirven. Mientras no haya una URL publica por servicio en el
+`.env`, Dashy se usa como pagina de inicio en la maquina local, no por el tunel.
+
+Si el tunel no carga un hostname que si responde en el servidor (`curl localhost:<puerto>`), y
+el navegador corta la conexion en el TLS, el problema esta del lado de Cloudflare: revisa en
+*DNS* que el registro sea un CNAME al tunel con la nube naranja, igual que uno que funcione. Si
+ya habia un registro con ese nombre al crear la ruta, Cloudflare no lo reemplaza.
 
 ### Conectar un producto
 
@@ -145,6 +191,12 @@ arrancar, `exec`- responde `403`. Se configura una vez en Kuma:
 
 Poner `/var/run/docker.sock` como host en Kuma no funciona: ese archivo no existe dentro de su
 contenedor, a proposito.
+
+**El diseno de una pagina de status** se cambia en *Status Pages -> la pagina -> Edit Status
+Page -> Custom CSS*. Ese CSS se guarda en la base de Kuma (`data/uptime-kuma/kuma.db`), no en el
+repo: si importa, guarda una copia aparte. Usa las clases estables (`.title`, `.description`,
+`.overall-status`, `.shadow-box`, `.group-title`, `.item`, `.item-name`, `.incident`,
+`.dark`) y no los atributos `[data-v-...]`, que cambian con cada version de Kuma.
 
 ### Primer arranque: las contrasenas
 
