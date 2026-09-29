@@ -1,7 +1,8 @@
 # Monitoreo: las carpetas de Grafana y Prometheus
 
-Como estan armadas, que se versiona y que no, y lo que hay que hacer **antes del primer
-arranque en un servidor Linux** para que no fallen por permisos.
+Como estan armadas, que se versiona y que no, lo que pasa **en el primer arranque en un
+servidor Linux** con los permisos, y como se leen las metricas de la propia maquina
+(node-exporter).
 
 El resumen de que es cada pieza y como se conecta un producto esta en el `README.md`, seccion
 *Monitoreo*. Este documento es la parte operativa.
@@ -158,6 +159,41 @@ docker exec devstack-grafana grafana cli admin reset-admin-password '<nueva>'
 
 ---
 
+## node-exporter: las metricas de la maquina
+
+Es un servicio del mismo `compose-dev.yaml`, en la red `devstack` y **sin puerto publicado**.
+Prometheus lo lee con el job `node` de `prometheus/prometheus.yml` (`node-exporter:9100`,
+etiqueta `instance="devstack-host"`), y se mira en Grafana con el tablero **Node Exporter Full**
+(*Import*, ID `1860`).
+
+No guarda nada en `data/`: lee la maquina en vivo a traves de montajes de solo lectura
+(`/proc`, `/sys` y `/`) y de `pid: host`.
+
+| Lo que mide | Es de la maquina? |
+|---|---|
+| CPU, carga, memoria, swap | si |
+| Discos y sistemas de archivos | si (sin los de Docker, excluidos a proposito) |
+| Interfaces de red (`node_network_*`) | **no**: son las del contenedor, porque no usa la red del host |
+
+Lo de la red es la contraparte de no publicar el puerto. La otra forma -`network_mode: host`-
+si ve las interfaces del servidor, pero entonces Prometheus solo lo alcanza por
+`host.docker.internal`, y en un servidor Linux el firewall del host suele cortar el trafico que
+viene de la red de Docker: el target queda `down`. Tampoco hay que resolverlo publicandolo por
+el tunel de Cloudflare: el `/metrics` queda abierto a internet sin credenciales.
+
+**Si la maquina ya tenia un node_exporter por su cuenta**, sobra. Se borra *despues* de
+confirmar que el del stack esta `up`, para no quedarse sin metricas en medio:
+
+```sh
+curl -s localhost:9090/api/v1/targets | grep -oE '"scrapeUrl":"[^"]+"|"health":"[a-z]+"'
+docker stop node_exporter && docker rm node_exporter
+```
+
+En el log aparece un `ERROR` sobre `/run/udev/data`. Solo le quita a los discos las etiquetas
+descriptivas de udev; las metricas salen completas.
+
+---
+
 ## Diagnostico
 
 ```sh
@@ -173,4 +209,6 @@ ls -ln data/                         # en Linux: el dueno debe ser 472 y 65534
 | Grafana reiniciandose, log con `is not writable` | permisos de `data/grafana`: igual |
 | Grafana dice que la fuente de datos no responde | Prometheus no esta `healthy`; mira su log |
 | Las metricas de un producto no aparecen | el producto no tiene `Observability__MetricsOtlpEndpoint`, o apunta a `localhost` desde un contenedor (ahi es `http://prometheus:9090/...`) |
+| Target `node` en `down` | `docker logs devstack-node-exporter`; y que el job apunte a `node-exporter:9100`, no a `host.docker.internal` ni al tunel |
+| En la pagina de targets el link `http://node-exporter:9100/metrics` no abre | es normal: es la direccion desde Prometheus, no desde tu navegador. Lo que importa es la columna *State* |
 | Muestras descartadas como `out of order` | el lote llego con mas de 30 min de atraso; ver `out_of_order_time_window` en `prometheus.yml` |

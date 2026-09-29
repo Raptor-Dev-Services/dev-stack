@@ -1,7 +1,8 @@
 # dev-stack — la infraestructura de desarrollo compartida
 
 Un solo Postgres, un solo MinIO, un solo Redis, un solo buzon de correo y un solo juego de
-monitoreo (Seq, Prometheus, Grafana, Uptime Kuma) para **todos** los productos de la maquina.
+monitoreo (Seq, Prometheus, Grafana, Uptime Kuma, node-exporter y Dashy) para **todos** los
+productos de la maquina.
 
 Sin esto, cada repo levanta los suyos: varios Postgres, varios MinIO y varios Redis haciendo
 exactamente lo mismo, cada uno con el puerto corrido para no chocar con el vecino, y aun asi
@@ -10,7 +11,7 @@ chocando.
 ## Aqui solo vive la infraestructura
 
 `compose-dev.yaml` levanta Postgres, MinIO, Redis, Mailpit y el monitoreo (Seq, Prometheus,
-Grafana y Uptime Kuma). Nada mas.
+Grafana, Uptime Kuma, node-exporter y Dashy). Nada mas.
 
 **Las APIs y los frontends los levanta cada producto desde su propio repositorio**, con
 `dotnet run` / `npm run dev` o con un `compose-dev.yaml` que se engancha a la red de este.
@@ -61,7 +62,7 @@ Despues, cada API con `dotnet run` desde su repo y cada front con `npm run dev`.
 
 ## Monitoreo
 
-Cuatro piezas, y cada una responde una pregunta distinta:
+Cada pieza responde una pregunta distinta:
 
 | Pieza | Responde | Se abre en (puertos del `.env.example`) |
 |---|---|---|
@@ -69,7 +70,18 @@ Cuatro piezas, y cada una responde una pregunta distinta:
 | **Prometheus** | cuanto y que tan rapido: metricas | http://localhost:9090 |
 | **Grafana** | verlo junto: tableros sobre Prometheus | http://localhost:3000 |
 | **Uptime Kuma** | esta arriba o no: sondea el `/health` de cada API | http://localhost:3001 |
+| **node-exporter** | como esta la maquina: CPU, memoria, carga, discos | no se abre: lo lee Prometheus y se mira en Grafana |
 | **Dashy** | donde esta todo: una pagina con un link a cada cosa | http://localhost:4000 |
+
+**node-exporter no publica puerto, a proposito.** Prometheus lo lee por su nombre en la red
+`devstack` (`node-exporter:9100`). Su `/metrics` cuenta sin credenciales el detalle de discos,
+montajes y kernel de la maquina, asi que no se publica ni por un puerto ni por un tunel: las
+metricas se miran en Grafana. El tablero listo es **Node Exporter Full**: en Grafana,
+*Dashboards -> New -> Import*, ID `1860`, fuente `Prometheus`.
+
+Si la maquina ya tenia un node_exporter corriendo por su cuenta, sobra: bajalo y borralo
+(`docker stop <nombre> && docker rm <nombre>`) para no tener dos. El del stack no choca con el
+viejo mientras conviven, porque no usa el 9100 del host.
 
 El detalle operativo de las carpetas de Grafana y Prometheus -que se versiona, respaldos, y los
 permisos que hacen falta en un servidor Linux- esta en **[MONITOREO.md](MONITOREO.md)**.

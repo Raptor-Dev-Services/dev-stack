@@ -22,6 +22,7 @@ va en **`PUERTOS.local.md`**, que no se versiona.
 | Grafana | `3000` | http://localhost:3000 |
 | Uptime Kuma | `3001` | http://localhost:3001 |
 | Dashy | `4000` | http://localhost:4000 (un link a todo lo demas) |
+| node-exporter | *(ninguno)* | no se publica: Prometheus lo lee como `node-exporter:9100` dentro de la red `devstack` |
 
 Todos se publican en la direccion `DEVSTACK_BIND` del `.env`: `127.0.0.1` los deja solo para
 esta maquina.
