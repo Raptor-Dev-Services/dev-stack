@@ -312,6 +312,35 @@ services:
       start_period: 15s
 
   # ---------------------------------------------------------------------------
+  # node-exporter - las metricas de la maquina donde corre el stack
+  # ---------------------------------------------------------------------------
+  # CPU, memoria, carga, discos y sistemas de archivos del HOST, que se miran en Grafana (el
+  # tablero "Node Exporter Full", ID 1860, las muestra todas).
+  #
+  # Va en la red `devstack` y SIN puerto publicado: Prometheus lo lee por su nombre
+  # (`node-exporter:9100`). Asi no depende de host.docker.internal ni del firewall del host,
+  # y no queda expuesto: el 9100 cuenta el detalle de discos, montajes y kernel sin pedir
+  # credenciales, y no tiene por que salir de la maquina ni por el tunel.
+  #
+  # Ve el host a traves de sus montajes de solo lectura y de `pid: host`. Lo unico que NO ve
+  # tal cual son las interfaces de red: al no usar la red del host, `node_network_*` reporta
+  # las del contenedor. CPU, memoria, carga y discos si son los del host.
+  node-exporter:
+    image: prom/node-exporter:v1.12.1
+    container_name: devstack-node-exporter
+    restart: unless-stopped
+    pid: host
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/rootfs"
+      - "--collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/docker/.+)($$|/)"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+
+  # ---------------------------------------------------------------------------
   # Grafana - tableros
   # ---------------------------------------------------------------------------
   # La fuente de datos de Prometheus llega sola por provisioning (`grafana/provisioning`,
