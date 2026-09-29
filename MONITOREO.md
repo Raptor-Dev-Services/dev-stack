@@ -40,26 +40,23 @@ Cada imagen corre con un usuario propio, no con root:
 Si `data/grafana` o `data/prometheus` no existen, Docker las crea **como root** al primer `up`, y
 ninguno de los dos puede escribir en ellas:
 
-- Grafana se reinicia en bucle con `GF_PATHS_DATA='/var/lib/grafana' is not writable`.
-- Prometheus sale con `opening storage failed: ... permission denied`.
+- Prometheus sale con `permission denied` sobre `queries.active`, queda `unhealthy`, y el `up`
+  termina en `dependency failed to start: container devstack-prometheus is unhealthy`.
+- Grafana ni arranca: depende de Prometheus. Si arrancara, fallaria igual con
+  `GF_PATHS_DATA='/var/lib/grafana' is not writable`.
 
-Por eso, **antes del primer `up`**, en el servidor:
+**Ya no hay que hacer nada a mano.** El servicio `permisos-init` del compose corre en cada `up`,
+crea las carpetas de `data/` y les pone el dueno correcto; Prometheus y Grafana esperan a que
+termine. Se ve en `docker logs devstack-permisos-init` (`==> permisos de data/ listos`) y queda
+como `Exited (0)`, que es lo correcto.
+
+Si alguna vez falla -por ejemplo, `data/` en un sistema de archivos que no admite `chown`, como
+un recurso compartido de red-, el arreglo manual es el mismo que hace el servicio:
 
 ```sh
-cd dev-stack
-mkdir -p data/grafana data/prometheus data/seq data/uptime-kuma
 sudo chown -R 472:0         data/grafana
 sudo chown -R 65534:65534   data/prometheus
 docker compose -f compose-dev.yaml up -d
-```
-
-Si ya arrancaste sin hacerlo, es lo mismo: baja los dos servicios, corre los `chown` y vuelve a
-levantarlos. No se pierde nada, porque no llegaron a escribir.
-
-```sh
-docker compose -f compose-dev.yaml stop grafana prometheus
-sudo chown -R 472:0 data/grafana && sudo chown -R 65534:65534 data/prometheus
-docker compose -f compose-dev.yaml up -d grafana prometheus
 ```
 
 Las carpetas **versionadas** (`prometheus/`, `grafana/provisioning/`) no necesitan `chown`: se
@@ -93,7 +90,7 @@ Para ver cuanto ocupa: `du -sh data/prometheus`.
 - **Respaldo:** `docker compose -f compose-dev.yaml stop prometheus`, copia `data/prometheus`,
   y vuelve a levantarlo. Copiar la carpeta con Prometheus corriendo puede dejar una copia
   inconsistente.
-- **De cero:** `stop prometheus`, `rm -rf data/prometheus/*`, y en Linux repite el `chown`.
+- **De cero:** `stop prometheus`, `rm -rf data/prometheus/*`; `permisos-init` le devuelve el dueno en el siguiente `up`.
 
 Son metricas de un entorno de desarrollo o staging: en la mayoria de los casos perderlas no
 cuesta nada, y empezar de cero es mas barato que respaldar.
@@ -146,7 +143,7 @@ variable del tablero sobre la etiqueta `service_name`.
 
 - **Respaldo:** `stop grafana`, copia `data/grafana/grafana.db`, levantalo. Es un SQLite: copiarlo
   con Grafana escribiendo puede dejarlo corrupto.
-- **De cero:** `stop grafana`, `rm -rf data/grafana/*`, y en Linux repite el `chown`. Al volver a
+- **De cero:** `stop grafana`, `rm -rf data/grafana/*`; `permisos-init` le devuelve el dueno en el siguiente `up`. Al volver a
   levantarlo recrea el usuario admin con `GRAFANA_ADMIN_PASSWORD` y la fuente de datos por
   provisioning; se pierde lo que se hizo a mano en la interfaz.
 
@@ -172,8 +169,8 @@ ls -ln data/                         # en Linux: el dueno debe ser 472 y 65534
 
 | Sintoma | Causa |
 |---|---|
-| Grafana reiniciandose, log con `is not writable` | falta el `chown` de `data/grafana` |
-| Prometheus `Exited`, log con `permission denied` | falta el `chown` de `data/prometheus` |
+| `up` termina con `container devstack-prometheus is unhealthy` | permisos de `data/prometheus`: mira `docker logs devstack-permisos-init` |
+| Grafana reiniciandose, log con `is not writable` | permisos de `data/grafana`: igual |
 | Grafana dice que la fuente de datos no responde | Prometheus no esta `healthy`; mira su log |
 | Las metricas de un producto no aparecen | el producto no tiene `Observability__MetricsOtlpEndpoint`, o apunta a `localhost` desde un contenedor (ahi es `http://prometheus:9090/...`) |
 | Muestras descartadas como `out of order` | el lote llego con mas de 30 min de atraso; ver `out_of_order_time_window` en `prometheus.yml` |

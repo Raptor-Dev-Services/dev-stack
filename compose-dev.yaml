@@ -215,6 +215,32 @@ services:
   #   Uptime Kuma  -> esta arriba o no (sondeo de /health de cada API)
 
   # ---------------------------------------------------------------------------
+  # permisos-init - deja ./data con el dueno que cada imagen espera, y se apaga
+  # ---------------------------------------------------------------------------
+  # Prometheus corre como `nobody` (65534) y Grafana como 472. En Linux, si Docker crea
+  # `data/prometheus` o `data/grafana` al primer `up`, las crea como root y ninguno de los dos
+  # puede escribir: Prometheus sale con `permission denied` y el `up` termina en
+  # "dependency failed to start: container devstack-prometheus is unhealthy". En Windows y
+  # macOS no se ve, porque el puente de archivos no aplica esos permisos.
+  #
+  # Corre en cada `up` y es idempotente. Seq y Uptime Kuma corren como root y no lo necesitan.
+  permisos-init:
+    image: busybox:1.37.0
+    container_name: devstack-permisos-init
+    user: "0:0"
+    command:
+      - sh
+      - -c
+      - >-
+        mkdir -p /data/prometheus /data/grafana /data/seq /data/uptime-kuma &&
+        chown -R 65534:65534 /data/prometheus &&
+        chown -R 472:0 /data/grafana &&
+        echo "==> permisos de data/ listos"
+    volumes:
+      - ./data:/data
+    restart: "no"
+
+  # ---------------------------------------------------------------------------
   # Seq - logs estructurados
   # ---------------------------------------------------------------------------
   # Dos puertos, y no son intercambiables:
@@ -266,6 +292,9 @@ services:
       - "--storage.tsdb.path=/prometheus"
       - "--storage.tsdb.retention.time=${PROMETHEUS_RETENTION:?falta PROMETHEUS_RETENTION en .env}"
       - "--web.enable-otlp-receiver"
+    depends_on:
+      permisos-init:
+        condition: service_completed_successfully
     # Para alcanzar lo que corre en la maquina y no en Docker (una API con `dotnet run`,
     # un node_exporter). En Docker Desktop ya existe; en Linux hace falta declararlo.
     extra_hosts:
@@ -294,6 +323,8 @@ services:
     container_name: devstack-grafana
     restart: unless-stopped
     depends_on:
+      permisos-init:
+        condition: service_completed_successfully
       prometheus:
         condition: service_healthy
     environment:
