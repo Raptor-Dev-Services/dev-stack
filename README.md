@@ -1,7 +1,7 @@
 # dev-stack — la infraestructura de desarrollo compartida
 
-Un solo Postgres, un solo MinIO, un solo Redis, un solo buzon de correo y un solo servidor
-de logs para **todos** los productos de la maquina.
+Un solo Postgres, un solo MinIO, un solo Redis, un solo buzon de correo y un solo juego de
+monitoreo (Seq, Prometheus, Grafana, Uptime Kuma) para **todos** los productos de la maquina.
 
 Sin esto, cada repo levanta los suyos: varios Postgres, varios MinIO y varios Redis haciendo
 exactamente lo mismo, cada uno con el puerto corrido para no chocar con el vecino, y aun asi
@@ -9,7 +9,8 @@ chocando.
 
 ## Aqui solo vive la infraestructura
 
-`compose-dev.yaml` levanta Postgres, MinIO, Redis, Mailpit y Seq. Nada mas.
+`compose-dev.yaml` levanta Postgres, MinIO, Redis, Mailpit y el monitoreo (Seq, Prometheus,
+Grafana y Uptime Kuma). Nada mas.
 
 **Las APIs y los frontends los levanta cada producto desde su propio repositorio**, con
 `dotnet run` / `npm run dev` o con un `compose-dev.yaml` que se engancha a la red de este.
@@ -31,11 +32,16 @@ versiona. De ahi salen las bases, los roles y los buckets.
 ```sh
 git clone git@github.com:{{ORG}}/dev-stack.git
 cd dev-stack
+cp .env.example .env                       # OBLIGATORIO; cambia las contrasenas de Seq y Grafana
 cp productos.conf.example productos.conf   # una linea por producto
 nano minio.license                         # pega tu licencia de MinIO AIStor
-cp .env.example .env                       # opcional: solo si te choca un puerto
 docker compose -f compose-dev.yaml up -d
 ```
+
+**El `.env` es obligatorio.** El compose no trae ningun puerto, usuario ni contrasena por
+omision: todo sale de ahi, y si falta el archivo o una variable, `docker compose` se niega a
+arrancar y dice cual (`required variable GRAFANA_PORT is missing a value`). Lo unico fijo en el
+compose son las versiones de las imagenes.
 
 `productos.conf` se lee **una sola vez**, en el primer arranque de Postgres (volumen vacio).
 Si lo arrancas sin el, el init de Postgres falla y lo dice. Los buckets, en cambio, se crean
@@ -48,10 +54,93 @@ docker compose -f compose-dev.yaml up -d
 docker compose -f compose-dev.yaml ps
 ```
 
-Los servicios deben decir `healthy` (Seq no tiene sonda y dice solo `running`).
-`devstack-minio-init` aparece como `exited (0)` — es correcto: crea los buckets y se apaga.
+Todos los servicios deben decir `healthy`. `devstack-minio-init` aparece como `exited (0)` —
+es correcto: crea los buckets y se apaga.
 
 Despues, cada API con `dotnet run` desde su repo y cada front con `npm run dev`.
+
+## Monitoreo
+
+Cuatro piezas, y cada una responde una pregunta distinta:
+
+| Pieza | Responde | Se abre en (puertos del `.env.example`) |
+|---|---|---|
+| **Seq** | que paso: los logs de cada request | http://localhost:5380 |
+| **Prometheus** | cuanto y que tan rapido: metricas | http://localhost:9090 |
+| **Grafana** | verlo junto: tableros sobre Prometheus | http://localhost:3000 |
+| **Uptime Kuma** | esta arriba o no: sondea el `/health` de cada API | http://localhost:3001 |
+| **Dashy** | donde esta todo: una pagina con un link a cada cosa | http://localhost:4000 |
+
+El detalle operativo de las carpetas de Grafana y Prometheus -que se versiona, respaldos, y los
+permisos que hacen falta en un servidor Linux- esta en **[MONITOREO.md](MONITOREO.md)**.
+
+### Dashy: la pagina de inicio
+
+Su configuracion **se genera en cada arranque** desde `dashy/conf.template.yml` (versionado, solo
+infraestructura) mas `dashy/productos.yml` (local, no versionado: los links a las APIs y fronts).
+Los dos usan `DEVSTACK_HOST` (escrito entre arrobas), que sale del `.env`, asi que el mismo archivo sirve en tu maquina
+y en el servidor. La edicion desde la interfaz esta apagada: lo que se cambiara ahi se perderia al
+reiniciar. Para cambiar un link se edita el archivo y `restart dashy`.
+
+```sh
+cp dashy/productos.example.yml dashy/productos.yml   # una seccion por producto
+```
+
+### En un servidor (staging)
+
+Tres valores del `.env` cambian respecto a tu maquina:
+
+| Variable | En tu maquina | En el servidor |
+|---|---|---|
+| `DEVSTACK_BIND` | `127.0.0.1` | la IP de la red privada o VPN; `0.0.0.0` solo con firewall |
+| `DEVSTACK_HOST` | `localhost` | el nombre o IP con que el navegador llega al servidor |
+| contrasenas | de desarrollo | **propias**: ya no es solo tu maquina |
+
+**Varios servicios no piden credenciales**: la ingesta de Seq, el receptor OTLP de Prometheus,
+Redis y Mailpit. Con `DEVSTACK_BIND=0.0.0.0` en un servidor con IP publica, cualquiera puede leer
+y escribir en ellos. Y antes del primer `up`, los permisos de `data/`: ver [MONITOREO.md](MONITOREO.md).
+
+### Conectar un producto
+
+| Para | Variable en el `.env` del producto |
+|---|---|
+| Logs a Seq | `Seq__ServerUrl=http://localhost:5341` (desde un contenedor: `http://seq:5341`) |
+| Metricas a Prometheus | `Observability__MetricsOtlpEndpoint=http://localhost:9090/api/v1/otlp/v1/metrics` (desde un contenedor: `http://prometheus:9090/...`) |
+
+**Las APIs no exponen `/metrics`: empujan.** Desde Common v2.1 las metricas salen por OTLP al
+receptor de Prometheus, que el compose enciende con `--web.enable-otlp-receiver`. Por eso
+`prometheus/prometheus.yml` casi no tiene `scrape_configs`. Cada metrica llega con la etiqueta
+`service_name` del producto, para filtrar las graficas por producto.
+
+**Seq tiene dos puertos y no son intercambiables.** `SEQ_INGESTION_PORT` (5341) solo recibe
+logs; `SEQ_UI_PORT` (5380) es la interfaz, con login. Los productos ya apuntaban al 5341, asi
+que para ellos no cambia nada.
+
+**Uptime Kuma** no se configura por archivo: los monitores se dan de alta en su interfaz. Una
+API que corre con `dotnet run` se sondea como `http://host.docker.internal:<puerto>/health/live`;
+una en contenedor de la red `devstack`, por su nombre de servicio.
+
+### Primer arranque: las contrasenas
+
+- **Seq** crea el usuario `SEQ_ADMIN_USER` con `SEQ_ADMIN_PASSWORD`, y **en el primer login
+  exige cambiarla**. La del `.env` solo sirve esa vez; despues manda la que pongas en la
+  interfaz.
+- **Grafana** crea `GRAFANA_ADMIN_USER` con `GRAFANA_ADMIN_PASSWORD`.
+- **Uptime Kuma** no acepta usuario por variable: lo pide su asistente la primera vez que abres
+  la interfaz.
+
+En los tres, las variables **solo aplican con la carpeta de datos vacia**. Cambiarlas en `.env`
+despues no cambia nada: la contrasena se cambia desde la interfaz.
+
+### Donde viven los datos
+
+En **`./data/<servicio>`**, junto al compose, y no se versiona. Se respalda copiando la carpeta,
+y para empezar de cero un servicio se baja y se borra su carpeta.
+
+Postgres, MinIO y Redis **siguen en volumenes con nombre**, a proposito: Postgres exige que su
+directorio sea del usuario `postgres` con permisos `0700`, cosa que una carpeta de Windows montada
+no cumple, y ademas tienen los datos de todos los productos. Moverlos a `./data` es una migracion
+con respaldo, no un cambio de una linea.
 
 ### Levantar un producto entero en contenedores
 
@@ -87,6 +176,9 @@ docker compose -f compose-dev.yaml down -v   # BORRA bases y buckets de todos lo
 ```
 
 `bajar-todo.sh` lista lo que va a parar y pide confirmacion. **Nunca** borra volumenes.
+
+`down -v` borra los volumenes con nombre (Postgres, MinIO, Redis) pero **no** `./data`: los logs,
+metricas, tableros y monitores sobreviven. Para borrarlos, se borra la carpeta.
 
 ---
 

@@ -1,0 +1,20 @@
+# =============================================================================
+# productos.example.yml - links a los productos, para la pagina de Dashy
+# =============================================================================
+# Copialo a `productos.yml` (NO se versiona: es la unica parte de Dashy que sabe que
+# productos existen, igual que productos.conf). `arrancar.sh` lo agrega al final de la
+# lista `sections:` de conf.template.yml, asi que cada bloque es una seccion mas, con la
+# misma sangria.
+#
+# El host (DEVSTACK_HOST, entre arrobas) se sustituye igual que en la plantilla: el mismo archivo sirve en tu
+# maquina y en el servidor. Tras editarlo: `docker compose -f compose-dev.yaml restart dashy`.
+# =============================================================================
+  - name: "{{PRODUCTO_A}}"
+    icon: fas fa-cube
+    items:
+      - title: Web
+        url: http://@DEVSTACK_HOST@:{{WEB_PORT_A}}
+      - title: API (Swagger)
+        url: http://@DEVSTACK_HOST@:{{API_PORT_A}}/swagger
+      - title: Salud
+        url: http://@DEVSTACK_HOST@:{{API_PORT_A}}/health/ready

@@ -1,0 +1,37 @@
+# =============================================================================
+# prometheus.yml - configuracion del Prometheus compartido
+# =============================================================================
+# Casi todo llega por EMPUJE, no por raspado: las APIs mandan sus metricas por OTLP a
+# /api/v1/otlp/v1/metrics (ver compose-dev.yaml). Por eso aqui casi no hay scrape_configs.
+#
+# Este archivo se versiona y el repo es publico: no lleva nombres de productos. Si un
+# producto expone un /metrics propio y quieres rasparlo, agregalo en tu copia local sin
+# commitearlo, o mejor, que empuje por OTLP como los demas.
+#
+# Tras editarlo: `docker compose -f compose-dev.yaml restart prometheus`.
+# =============================================================================
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# Atributos del recurso OTLP que se vuelven etiquetas. Sin esto, `service.name` queda
+# escondido en `target_info` y no se puede filtrar una grafica por producto.
+otlp:
+  promote_resource_attributes:
+    - service.name
+    - service.namespace
+    - service.instance.id
+    - deployment.environment
+
+storage:
+  tsdb:
+    # Un exportador OTLP manda por lotes y puede entregar muestras un poco atrasadas; sin
+    # ventana, Prometheus las descarta en silencio como "out of order".
+    out_of_order_time_window: 30m
+
+scrape_configs:
+  # Prometheus se mide a si mismo: sirve para ver que esta vivo y cuanto ocupa.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

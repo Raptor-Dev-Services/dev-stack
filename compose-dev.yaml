@@ -2,16 +2,38 @@
 # compose-dev.yaml - LA infraestructura de desarrollo, compartida por todos los productos
 # =============================================================================
 # Un solo Postgres, un solo MinIO, un solo Redis, un solo buzon de correo y un solo
-# servidor de logs para todos los productos de la maquina, en lugar de una instancia de
-# cada cosa por repo peleandose los puertos.
+# juego de monitoreo (Seq, Prometheus, Grafana, Uptime Kuma) para todos los productos de
+# la maquina, en lugar de una instancia de cada cosa por repo peleandose los puertos.
 #
+#     cp .env.example .env                           # una vez: OBLIGATORIO, ver abajo
 #     cp productos.conf.example productos.conf     # una vez: que productos hay
 #     docker compose -f compose-dev.yaml up -d       # levanta la infraestructura
 #     docker compose -f compose-dev.yaml down        # la baja, conservando los datos
-#     docker compose -f compose-dev.yaml down -v     # la baja y BORRA los datos
+#     docker compose -f compose-dev.yaml down -v     # la baja y BORRA los volumenes
 #
 # Las APIs NO estan aqui: cada producto las levanta desde su repo (`dotnet run`, o un
 # compose propio enganchado a la red `devstack`).
+#
+# -----------------------------------------------------------------------------
+# EL .env ES OBLIGATORIO
+# -----------------------------------------------------------------------------
+# Ningun puerto, usuario ni contrasena esta escrito en este archivo: todos salen de `.env`
+# con la forma `${VAR:?...}`. Si falta el archivo o una variable, `docker compose` se niega
+# a arrancar y dice cual falta, en vez de levantar con un valor que nadie eligio. Lo unico
+# fijo aqui son las versiones de las imagenes, que son parte del stack y no de la maquina.
+#
+# -----------------------------------------------------------------------------
+# DONDE VIVEN LOS DATOS
+# -----------------------------------------------------------------------------
+# El monitoreo (Seq, Prometheus, Grafana, Uptime Kuma) guarda en `./data/<servicio>`, junto
+# a este archivo: se ve, se respalda copiando la carpeta y `down -v` NO la borra. Para
+# empezar de cero un servicio, se baja y se borra su carpeta.
+#
+# Postgres, MinIO y Redis siguen en volumenes con nombre, a proposito: Postgres exige que su
+# directorio de datos sea del usuario `postgres` con permisos 0700, y un bind mount sobre
+# una carpeta de Windows no puede cumplirlo (initdb falla o la base corre lenta sobre el
+# puente de archivos). Ademas ya tienen las bases de todos los productos: moverlos es una
+# migracion con respaldo, no un cambio de una linea.
 #
 # -----------------------------------------------------------------------------
 # POR QUE LOS PUERTOS SON LOS ESTANDAR
@@ -21,6 +43,18 @@
 # contenedor ya tiene el 5432, este no arranca en silencio: `up` falla con el bind. Y una
 # conexion a la base equivocada es imposible porque cada producto tiene su propio rol
 # (ver init/postgres/00-bases-y-roles.sh).
+#
+# -----------------------------------------------------------------------------
+# DESDE DONDE SE PUEDE ENTRAR: DEVSTACK_BIND
+# -----------------------------------------------------------------------------
+# Todo puerto se publica en la direccion DEVSTACK_BIND del .env, y no es un detalle: varios
+# servicios NO piden credenciales (la ingesta de Seq, el receptor OTLP de Prometheus, Redis,
+# Mailpit) y el resto usa contrasenas de desarrollo.
+#   127.0.0.1  solo esta maquina. Lo seguro en tu equipo.
+#   0.0.0.0    toda la red. Solo detras de un firewall, o con una app movil en un telefono
+#              fisico que tenga que llegar a MinIO por la IP de la LAN.
+#   <IP>       una interfaz concreta del servidor (la de la VPN o la red privada).
+# Las APIs en contenedor NO dependen de esto: hablan con el stack por la red `devstack`.
 #
 # -----------------------------------------------------------------------------
 # LO QUE ESTE ARCHIVO **NO** COMPARTE
@@ -52,13 +86,13 @@ services:
     container_name: devstack-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_SUPERUSER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_SUPERPASS:-postgres}
+      POSTGRES_USER: ${POSTGRES_SUPERUSER:?falta POSTGRES_SUPERUSER en .env}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERPASS:?falta POSTGRES_SUPERPASS en .env}
       # La base del superusuario. Las de los productos las crea el script de init.
       POSTGRES_DB: postgres
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${DEVSTACK_BIND:?falta DEVSTACK_BIND en .env}:${POSTGRES_PORT:?falta POSTGRES_PORT en .env}:5432"
     volumes:
       - devstack-pg:/var/lib/postgresql/data
       # Solo se ejecuta con el volumen vacio. Para reprovisionar: `down -v` y `up`.
@@ -68,7 +102,7 @@ services:
       # con un error que no apunta a la causa.
       - ./:/devstack:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_SUPERUSER:-postgres} -d postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_SUPERUSER:?falta POSTGRES_SUPERUSER en .env} -d postgres"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -95,11 +129,11 @@ services:
     restart: unless-stopped
     command: server /data --console-address ":9001" --license /devstack/minio.license
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?falta MINIO_ROOT_USER en .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?falta MINIO_ROOT_PASSWORD en .env}
     ports:
-      - "${MINIO_API_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "${DEVSTACK_BIND:?falta DEVSTACK_BIND en .env}:${MINIO_API_PORT:?falta MINIO_API_PORT en .env}:9000"
+      - "${DEVSTACK_BIND:?falta DEVSTACK_BIND en .env}:${MINIO_CONSOLE_PORT:?falta MINIO_CONSOLE_PORT en .env}:9001"
     volumes:
       - devstack-minio:/data
       # El directorio y no el archivo suelto: si minio.license no existe, montarlo solo
@@ -123,8 +157,8 @@ services:
       minio:
         condition: service_healthy
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?falta MINIO_ROOT_USER en .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?falta MINIO_ROOT_PASSWORD en .env}
     volumes:
       - ./init/minio:/init:ro
       - ./:/devstack:ro
@@ -145,7 +179,7 @@ services:
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "${DEVSTACK_BIND:?falta DEVSTACK_BIND en .env}:${REDIS_PORT:?falta REDIS_PORT en .env}:6379"
     volumes:
       - devstack-redis:/data
     healthcheck:
@@ -157,46 +191,195 @@ services:
   # ---------------------------------------------------------------------------
   # Mailpit - el correo saliente de TODOS los productos, que no sale a internet
   # ---------------------------------------------------------------------------
-  # Todos caen en la MISMA bandeja, http://localhost:8025, y se distinguen por el remitente.
+  # Todos caen en la MISMA bandeja (MAILPIT_WEB_PORT) y se distinguen por el remitente.
   mailpit:
-    image: axllent/mailpit:latest
+    image: axllent/mailpit:v1.31.3
     container_name: devstack-mailpit
     restart: unless-stopped
     ports:
-      - "${MAILPIT_SMTP_PORT:-1025}:1025"
-      - "${MAILPIT_WEB_PORT:-8025}:8025"
+      - "${DEVSTACK_BIND:?falta DEVSTACK_BIND en .env}:${MAILPIT_SMTP_PORT:?falta MAILPIT_SMTP_PORT en .env}:1025"
+      - "${DEVSTACK_BIND:?falta DEVSTACK_BIND en .env}:${MAILPIT_WEB_PORT:?falta MAILPIT_WEB_PORT en .env}:8025"
     healthcheck:
       test: ["CMD", "/mailpit", "readyz"]
       interval: 5s
       timeout: 3s
       retries: 20
 
+  # ===========================================================================
+  # MONITOREO
+  # ===========================================================================
+  # Cada pieza responde una pregunta distinta, y ninguna sustituye a otra:
+  #   Seq          -> que paso (logs estructurados de cada request)
+  #   Prometheus   -> cuanto y que tan rapido (metricas en serie de tiempo)
+  #   Grafana      -> verlo junto (tableros sobre Prometheus)
+  #   Uptime Kuma  -> esta arriba o no (sondeo de /health de cada API)
+
   # ---------------------------------------------------------------------------
   # Seq - logs estructurados
   # ---------------------------------------------------------------------------
-  # En el stack comun para que dos Seq no se peleen el 5341 el dia que un segundo
-  # producto quiera mandar logs.
+  # Dos puertos, y no son intercambiables:
+  #   SEQ_INGESTION_PORT -> 5341 del contenedor: SOLO ingesta. Es el que ya usan los
+  #                         productos (`Seq__ServerUrl=http://localhost:5341`), asi que no
+  #                         cambia nada para ellos.
+  #   SEQ_UI_PORT        -> 80 del contenedor: la interfaz web, con login.
+  # Desde otro contenedor de la red `devstack`, la ingesta es `http://seq:5341`.
+  #
+  # La contrasena de `admin` solo se aplica en el PRIMER arranque (carpeta de datos vacia).
+  # Cambiarla despues en `.env` no hace nada: se cambia desde la interfaz.
   seq:
-    image: datalust/seq:latest
+    image: datalust/seq:2026.1.17182
     container_name: devstack-seq
     restart: unless-stopped
     environment:
       ACCEPT_EULA: "Y"
-      SEQ_FIRSTRUN_NOAUTHENTICATION: "true"
+      SEQ_FIRSTRUN_ADMINUSERNAME: ${SEQ_ADMIN_USER:?falta SEQ_ADMIN_USER en .env}
+      SEQ_FIRSTRUN_ADMINPASSWORD: ${SEQ_ADMIN_PASSWORD:?falta SEQ_ADMIN_PASSWORD en .env}
     ports:
-      - "${SEQ_PORT:-5341}:80"
+      - "${DEVSTACK_BIND:?falta DEVSTACK_BIND en .env}:${SEQ_UI_PORT:?falta SEQ_UI_PORT en .env}:80"
+      - "${DEVSTACK_BIND:?falta DEVSTACK_BIND en .env}:${SEQ_INGESTION_PORT:?falta SEQ_INGESTION_PORT en .env}:5341"
     volumes:
-      - devstack-seq:/data
+      - ./data/seq:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # Prometheus - metricas
+  # ---------------------------------------------------------------------------
+  # Las APIs NO exponen /metrics: desde Common v2.1 EMPUJAN sus metricas por OTLP al
+  # receptor de Prometheus, que por eso va encendido (`--web.enable-otlp-receiver`). En el
+  # producto basta con:
+  #     Observability__MetricsOtlpEndpoint=http://localhost:9090/api/v1/otlp/v1/metrics
+  # (o `http://prometheus:9090/...` si la API corre en un contenedor de la red `devstack`).
+  #
+  # La configuracion vive en `prometheus/prometheus.yml`, versionada. El puerto de la
+  # interfaz es el que se publica; dentro del contenedor siempre es 9090.
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    container_name: devstack-prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=${PROMETHEUS_RETENTION:?falta PROMETHEUS_RETENTION en .env}"
+      - "--web.enable-otlp-receiver"
+    # Para alcanzar lo que corre en la maquina y no en Docker (una API con `dotnet run`,
+    # un node_exporter). En Docker Desktop ya existe; en Linux hace falta declararlo.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${DEVSTACK_BIND:?falta DEVSTACK_BIND en .env}:${PROMETHEUS_PORT:?falta PROMETHEUS_PORT en .env}:9090"
+    volumes:
+      - ./prometheus:/etc/prometheus:ro
+      - ./data/prometheus:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # Grafana - tableros
+  # ---------------------------------------------------------------------------
+  # La fuente de datos de Prometheus llega sola por provisioning (`grafana/provisioning`,
+  # versionado): un clon limpio abre Grafana ya conectado, sin configurar nada a mano.
+  #
+  # Usuario y contrasena de admin, igual que Seq: solo aplican en el PRIMER arranque.
+  grafana:
+    image: grafana/grafana:13.2.3
+    container_name: devstack-grafana
+    restart: unless-stopped
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?falta GRAFANA_ADMIN_USER en .env}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?falta GRAFANA_ADMIN_PASSWORD en .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    ports:
+      - "${DEVSTACK_BIND:?falta DEVSTACK_BIND en .env}:${GRAFANA_PORT:?falta GRAFANA_PORT en .env}:3000"
+    volumes:
+      - ./data/grafana:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
+  # Uptime Kuma - esta arriba o no
+  # ---------------------------------------------------------------------------
+  # Sondea el /health de cada API y avisa cuando cae. El usuario administrador se crea en
+  # el asistente del primer arranque, en la interfaz: Kuma no lo acepta por variable.
+  #
+  # Los monitores se dan de alta en la interfaz y viven en `./data/uptime-kuma`. Una API
+  # que corre con `dotnet run` se sondea como `http://host.docker.internal:<puerto>/...`;
+  # una en contenedor de la red `devstack`, por su nombre de servicio.
+  #
+  # El healthcheck lo trae la imagen.
+  uptime-kuma:
+    image: louislam/uptime-kuma:2.5.5
+    container_name: devstack-uptime-kuma
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${DEVSTACK_BIND:?falta DEVSTACK_BIND en .env}:${UPTIME_KUMA_PORT:?falta UPTIME_KUMA_PORT en .env}:3001"
+    volumes:
+      - ./data/uptime-kuma:/app/data
+
+  # ---------------------------------------------------------------------------
+  # Dashy - la pagina de inicio: un link a cada cosa del stack y de los productos
+  # ---------------------------------------------------------------------------
+  # No guarda datos: su conf.yml se GENERA en cada arranque desde dashy/conf.template.yml
+  # (versionado) mas dashy/productos.yml (local, no versionado), con el host y los puertos
+  # de este .env. Asi el mismo archivo sirve en tu maquina y en el servidor. La edicion desde
+  # la interfaz esta apagada porque se perderia al reiniciar. Ver dashy/arrancar.sh.
+  #
+  # DEVSTACK_HOST es el nombre con el que el NAVEGADOR llega a esta maquina (localhost en tu
+  # equipo, el nombre o IP del servidor en staging), no un nombre de la red de Docker.
+  dashy:
+    image: lissy93/dashy:4.7.10
+    container_name: devstack-dashy
+    restart: unless-stopped
+    entrypoint: ["/sbin/tini", "--", "/bin/sh", "/dashy-init/arrancar.sh"]
+    environment:
+      DEVSTACK_HOST: ${DEVSTACK_HOST:?falta DEVSTACK_HOST en .env}
+      GRAFANA_PORT: ${GRAFANA_PORT:?falta GRAFANA_PORT en .env}
+      PROMETHEUS_PORT: ${PROMETHEUS_PORT:?falta PROMETHEUS_PORT en .env}
+      SEQ_UI_PORT: ${SEQ_UI_PORT:?falta SEQ_UI_PORT en .env}
+      UPTIME_KUMA_PORT: ${UPTIME_KUMA_PORT:?falta UPTIME_KUMA_PORT en .env}
+      MINIO_CONSOLE_PORT: ${MINIO_CONSOLE_PORT:?falta MINIO_CONSOLE_PORT en .env}
+      MAILPIT_WEB_PORT: ${MAILPIT_WEB_PORT:?falta MAILPIT_WEB_PORT en .env}
+    ports:
+      - "${DEVSTACK_BIND:?falta DEVSTACK_BIND en .env}:${DASHY_PORT:?falta DASHY_PORT en .env}:8080"
+    volumes:
+      - ./dashy:/dashy-init:ro
+    # La sonda de la imagen corre cada 5 minutos: un Dashy caido tardaria eso en verse.
+    healthcheck:
+      test: ["CMD-SHELL", "node services/healthcheck.js"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
 volumes:
   devstack-pg:
   devstack-minio:
   devstack-redis:
-  devstack-seq:
 
 # Red con nombre fijo para que el compose de cada producto pueda engancharse a ella como
 # externa. Sin `name:`, Compose la llamaria `devstack_default` y cada repo tendria que
-# adivinar ese nombre derivado.
+# adivinar ese nombre derivado. El monitoreo va en la MISMA red: asi Prometheus, Kuma y
+# Seq alcanzan a las APIs en contenedor por su nombre, y ellas a ellos.
 networks:
   default:
     name: devstack

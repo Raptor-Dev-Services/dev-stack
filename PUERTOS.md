@@ -16,10 +16,20 @@ va en **`PUERTOS.local.md`**, que no se versiona.
 | Redis | `6379` | — |
 | Mailpit (SMTP) | `1025` | — |
 | Mailpit (bandeja) | `8025` | http://localhost:8025 |
-| Seq (logs) | `5341` | http://localhost:5341 |
+| Seq (ingesta de logs) | `5341` | — (solo recibe; es el `Seq__ServerUrl` de los productos) |
+| Seq (interfaz) | `5380` | http://localhost:5380 |
+| Prometheus | `9090` | http://localhost:9090 (receptor OTLP en `/api/v1/otlp/v1/metrics`) |
+| Grafana | `3000` | http://localhost:3000 |
+| Uptime Kuma | `3001` | http://localhost:3001 |
+| Dashy | `4000` | http://localhost:4000 (un link a todo lo demas) |
 
-Credenciales de administracion: `postgres` / `postgres` y `minioadmin` / `minioadmin`.
-Son de desarrollo local; se cambian en `.env`.
+Todos se publican en la direccion `DEVSTACK_BIND` del `.env`: `127.0.0.1` los deja solo para
+esta maquina.
+
+Son los valores de `.env.example`; el que manda es tu `.env`, que es obligatorio. Las
+credenciales de administracion tambien salen de ahi: `postgres` / `postgres` y
+`minioadmin` / `minioadmin` por omision en el ejemplo, y las de Seq y Grafana las eliges tu.
+Son de desarrollo local.
 
 ## APIs
 

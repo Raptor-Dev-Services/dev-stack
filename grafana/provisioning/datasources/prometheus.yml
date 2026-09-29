@@ -1,0 +1,13 @@
+# Fuente de datos que Grafana crea sola al arrancar. Apunta al Prometheus del stack por su
+# nombre de servicio en la red `devstack`, no por localhost: dentro del contenedor de
+# Grafana, localhost es Grafana.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: devstack-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false

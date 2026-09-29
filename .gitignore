@@ -4,3 +4,7 @@
 productos.conf
 PUERTOS.local.md
 minio.license
+# Datos del monitoreo (Seq, Prometheus, Grafana, Uptime Kuma), en bind mount junto al compose.
+data/
+# Links de Dashy a los productos: nombra productos, igual que productos.conf.
+dashy/productos.yml
