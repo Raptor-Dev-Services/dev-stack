@@ -360,6 +360,11 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?falta GRAFANA_ADMIN_USER en .env}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?falta GRAFANA_ADMIN_PASSWORD en .env}
       GF_USERS_ALLOW_SIGN_UP: "false"
+      # La URL con la que se llega a Grafana DESDE FUERA. Con ella arma los links que genera:
+      # dashboards publicos, snapshots, invitaciones y las redirecciones del login. Sin ella
+      # supone http://localhost:3000, y un dashboard publico compartido con alguien externo
+      # le llega apuntando a localhost.
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:?falta GRAFANA_ROOT_URL en .env}
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
     ports:

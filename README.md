@@ -100,12 +100,13 @@ cp dashy/productos.example.yml dashy/productos.yml   # una seccion por producto
 
 ### En un servidor (staging)
 
-Tres valores del `.env` cambian respecto a tu maquina:
+Estos valores del `.env` cambian respecto a tu maquina:
 
 | Variable | En tu maquina | En el servidor |
 |---|---|---|
 | `DEVSTACK_BIND` | `127.0.0.1` | la IP de la red privada o VPN; `0.0.0.0` solo con firewall |
 | `DEVSTACK_HOST` | `localhost` | el nombre o IP con que el navegador llega al servidor |
+| `GRAFANA_ROOT_URL` | `http://localhost:3000` | la URL publica de Grafana, p. ej. `https://grafana.tudominio.com/`. Sin ella, un dashboard publico compartido llega apuntando a `localhost` |
 | contrasenas | de desarrollo | **propias**: ya no es solo tu maquina |
 
 **Varios servicios no piden credenciales**: la ingesta de Seq, el receptor OTLP de Prometheus,
