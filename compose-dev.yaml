@@ -402,6 +402,27 @@ services:
       - ./data/uptime-kuma:/app/data
 
   # ---------------------------------------------------------------------------
+  # docker-socket-proxy - Uptime Kuma pregunta por los contenedores SIN tener el socket
+  # ---------------------------------------------------------------------------
+  # El monitor "Docker Container" de Kuma necesita la API de Docker. Montarle el socket
+  # directamente seria darle root sobre la maquina -el `:ro` protege el archivo, no lo que la
+  # API deja hacer- a un servicio que esta publicado en el tunel.
+  #
+  # Este proxy es el unico que tiene el socket, y solo deja pasar LECTURAS de contenedores:
+  # CONTAINERS=1 y todo lo demas en 0, incluido POST (nada de start/stop/exec/crear). Va en la
+  # red `devstack` sin puerto publicado. En Kuma: Settings -> Docker Hosts -> tipo
+  # "TCP / HTTP", URL http://docker-socket-proxy:2375.
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:v0.5.0
+    container_name: devstack-docker-socket-proxy
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      POST: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  # ---------------------------------------------------------------------------
   # Dashy - la pagina de inicio: un link a cada cosa del stack y de los productos
   # ---------------------------------------------------------------------------
   # No guarda datos: su conf.yml se GENERA en cada arranque desde dashy/conf.template.yml

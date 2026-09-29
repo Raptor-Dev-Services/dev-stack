@@ -133,6 +133,19 @@ que para ellos no cambia nada.
 API que corre con `dotnet run` se sondea como `http://host.docker.internal:<puerto>/health/live`;
 una en contenedor de la red `devstack`, por su nombre de servicio.
 
+**Para vigilar contenedores** (monitor tipo *Docker Container*), Kuma **no** tiene el socket de
+Docker: quien lo tiene manda sobre la maquina entera, y Kuma esta publicado. Lo tiene el servicio
+`docker-socket-proxy`, que solo deja pasar lecturas de contenedores; cualquier `POST` -detener,
+arrancar, `exec`- responde `403`. Se configura una vez en Kuma:
+
+1. *Settings -> Docker Hosts -> Setup Docker Host*: tipo **TCP / HTTP**, URL
+   **`http://docker-socket-proxy:2375`**.
+2. Al crear el monitor *Docker Container*, ese host, y como contenedor el **nombre** que muestra
+   `docker ps` (p. ej. `devstack-postgres`).
+
+Poner `/var/run/docker.sock` como host en Kuma no funciona: ese archivo no existe dentro de su
+contenedor, a proposito.
+
 ### Primer arranque: las contrasenas
 
 - **Seq** crea el usuario `SEQ_ADMIN_USER` con `SEQ_ADMIN_PASSWORD`, y **en el primer login
