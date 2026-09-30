@@ -4,7 +4,8 @@
 # Independiente del resto de dev-stack: se levanta y se baja desde esta carpeta, con su propio .env.
 #
 #     cp .env.example .env        # una vez; poner RUNNER_TOKEN y los ids del host (ver .env.example)
-#     docker compose up -d        # levanta los runners (el primer arranque los registra en GitHub)
+#     docker compose up -d        # levanta los 4 runners (el primer arranque los registra en GitHub)
+#     docker compose up -d runner-1 runner-2   # o solo algunos, en una maquina chica
 #     docker compose logs -f      # ver el registro y los jobs
 #     docker compose down         # los baja; siguen registrados y al volver no piden token
 #
@@ -69,3 +70,17 @@ services:
     environment:
       <<: *runner-env
       RUNNER_NAME: ${RUNNER_NAME_PREFIX}-2
+
+  runner-3:
+    <<: *runner
+    container_name: ${RUNNER_NAME_PREFIX}-3
+    environment:
+      <<: *runner-env
+      RUNNER_NAME: ${RUNNER_NAME_PREFIX}-3
+
+  runner-4:
+    <<: *runner
+    container_name: ${RUNNER_NAME_PREFIX}-4
+    environment:
+      <<: *runner-env
+      RUNNER_NAME: ${RUNNER_NAME_PREFIX}-4

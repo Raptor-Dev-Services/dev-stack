@@ -38,7 +38,7 @@ Los runners aparecen en GitHub como `<RUNNER_NAME_PREFIX>-1`, `-2`, ... con las 
 
 ## Agregar o quitar runners
 
-- **Agregar:** copia el bloque `runner-2` de `compose.yaml` como `runner-3` y cambia el numero en sus tres
+- **Agregar:** copia el bloque `runner-4` de `compose.yaml` como `runner-5` y cambia el numero en sus tres
   lineas. Genera un token nuevo si ya caduco el anterior y `docker compose up -d`.
 - **Quitar:** `docker compose rm -sf runner-N`, borra su carpeta `RUNNERS_DIR/<nombre>` y quitalo en
   GitHub (Settings > Actions > Runners).
@@ -46,9 +46,27 @@ Los runners aparecen en GitHub como `<RUNNER_NAME_PREFIX>-1`, `-2`, ... con las 
 Cada runner se declara aparte, y no con `deploy.replicas`, porque cada uno guarda sus credenciales en su
 propia carpeta de estado: con replicas compartirian nombre y credenciales.
 
-Cuantos: en el Pentium J5005 del server actual, **2**. No suman CPU, pero la API y el panel dejan de
-esperarse uno al otro y los jobs ligeros (secretos, dependencias) no hacen cola detras de un build. En una
-maquina de 4 nucleos/8 hilos o mas, 3.
+El compose trae **4**. En una maquina chica se pueden levantar solo algunos
+(`docker compose up -d runner-1 runner-2`): en el Pentium J5005 del server actual, 4 builds de .NET a la vez
+se reparten 4 nucleos lentos y cada uno tarda mas, asi que ahi conviene 2. Mas runners no suman CPU; lo
+que ganan es que los jobs ligeros (secretos, dependencias) y los de otro repo no hacen cola detras de un
+build.
+
+## Varias maquinas
+
+El mismo compose sirve en cada PC que quieras sumar como runner de la organizacion:
+
+- **`RUNNER_NAME_PREFIX` distinto en cada maquina** (su nombre). Si dos usan el mismo, el registro de una
+  (`--replace`) le quita los runners a la otra sin avisar.
+- **Host Linux.** El truco de montar el home en su misma ruta necesita que el Docker del host vea las
+  mismas rutas que el runner. En Windows o macOS con Docker Desktop no se cumple (`C:\Users\...` no existe
+  dentro de la VM); ahi tendria que ser dentro de WSL2, con el clon y el home en el sistema de archivos de
+  Linux, y no esta probado.
+- **Lo que los pipelines esperan en `$HOME`** tiene que existir en esa maquina: `docker login` a Harbor
+  para los jobs que empujan imagenes, y para los deploys de staging, el dev-stack y los `.env` de staging.
+  Una maquina que solo va a compilar no necesita lo de staging, pero hoy cualquier runner puede recibir un
+  deploy: si una maquina no debe desplegar, dale una etiqueta extra (`RUNNER_LABELS`) y haz que el job de
+  deploy la pida.
 
 ## Como funciona (y por que asi)
 
