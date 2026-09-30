@@ -80,7 +80,11 @@ El mismo compose sirve en cada PC que quieras sumar como runner de la organizaci
    `HOME` del runner. Los pipelines hacen `docker run -v "$PWD":/src`, y ese `$PWD` lo resuelve el Docker
    del **host**: si la ruta no existiera igual afuera, el build veria una carpeta vacia. Por eso
    `RUNNERS_DIR` tiene que vivir dentro de `HOST_HOME`.
-3. **Registro una sola vez.** Con token, registra y copia sus credenciales a
+3. **Compose del host.** La imagen oficial trae el CLI de Docker pero no el plugin de compose, y los
+   deploys hacen `docker compose up`. Se monta el del host (`DOCKER_COMPOSE_PLUGIN`); si la ruta esta mal,
+   el runner avisa al arrancar. Sin eso, un deploy llega a empujar la imagen y migrar la base, y falla en el
+   ultimo paso con `unknown flag: --env-file` (paso el 2026-09-30).
+4. **Registro una sola vez.** Con token, registra y copia sus credenciales a
    `RUNNERS_DIR/<nombre>/state`. En cada arranque siguiente las restaura y no pide token.
 
 Probado en local (2026-09-30): sin token para con el mensaje de arriba; con un token falso llega a GitHub y

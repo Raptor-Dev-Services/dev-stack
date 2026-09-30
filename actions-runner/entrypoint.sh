@@ -88,5 +88,11 @@ else
 fi
 
 # --- 3. Arranque ---------------------------------------------------------------------------------
+# Sin compose, los jobs de deploy fallan hasta su ULTIMO paso ("unknown flag: --env-file"), despues de
+# haber empujado la imagen y migrado la base. Mejor avisarlo aqui, al arrancar.
+if ! runuser -u runner -- docker compose version >/dev/null 2>&1; then
+  echo "entrypoint: AVISO: 'docker compose' no funciona dentro del runner; revisa DOCKER_COMPOSE_PLUGIN" >&2
+  echo "  en actions-runner/.env (ruta del plugin en el host). Los jobs de deploy van a fallar." >&2
+fi
 cd "$ROOT"
 exec runuser -u runner -- "$ROOT/run.sh"

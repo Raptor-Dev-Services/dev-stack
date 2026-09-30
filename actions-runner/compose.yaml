@@ -42,6 +42,9 @@ x-runner: &runner
   volumes:
     - ./entrypoint.sh:/entrypoint.sh:ro
     - /var/run/docker.sock:/var/run/docker.sock
+    # La imagen oficial trae el CLI de Docker pero NO el plugin de compose, y los deploys hacen
+    # `docker compose up`. Se monta el del host: mismo binario (estatico) y misma version que su daemon.
+    - ${DOCKER_COMPOSE_PLUGIN:?Falta DOCKER_COMPOSE_PLUGIN en actions-runner/.env}:/usr/local/lib/docker/cli-plugins/docker-compose:ro
     - ${HOST_HOME:?Falta HOST_HOME en actions-runner/.env}:${HOST_HOME}
 
 x-runner-env: &runner-env
