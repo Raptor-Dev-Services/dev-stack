@@ -1,0 +1,71 @@
+# =============================================================================
+# actions-runner/compose.yaml - N runners de GitHub Actions en contenedores
+# =============================================================================
+# Independiente del resto de dev-stack: se levanta y se baja desde esta carpeta, con su propio .env.
+#
+#     cp .env.example .env        # una vez; poner RUNNER_TOKEN y los ids del host (ver .env.example)
+#     docker compose up -d        # levanta los runners (el primer arranque los registra en GitHub)
+#     docker compose logs -f      # ver el registro y los jobs
+#     docker compose down         # los baja; siguen registrados y al volver no piden token
+#
+# Todos usan la IMAGEN OFICIAL (ghcr.io/actions/actions-runner), sin imagen propia: el toolchain de cada
+# build (SDK de .NET, Node, python) lo trae el propio pipeline con `docker run`, contra el Docker del host
+# (socket montado). Asi cada repo fija sus versiones y estos runners sirven para cualquier proyecto.
+#
+# Para agregar otro runner: copia un bloque `runner-N` y cambia el numero en sus tres lineas. Cada uno
+# necesita su propio nombre porque guarda sus credenciales en su carpeta (RUNNERS_DIR/<nombre>/state).
+# No se usa `deploy.replicas` a proposito: las replicas compartirian nombre y carpeta de estado.
+#
+# Que ven los runners del host, y por que:
+#   - el socket de Docker: los builds, Harbor, migraciones y staging corren en el Docker del host.
+#   - HOST_HOME montado EN SU MISMA RUTA: `$HOME/...` de los pipelines (el login de Harbor en ~/.docker,
+#     ~/sociofit-staging, ~/Docker/dev-stack) y las rutas de trabajo son las mismas que en el host. Es lo
+#     que hace funcionar los `docker run -v "$PWD":/src` de los pipelines.
+#   - red host: igual que el resto de la infraestructura del server; nada de redes de Docker.
+# Ojo: montar el socket de Docker equivale a root en el host. Es el mismo nivel de confianza que tenia
+# el runner instalado directo en el server; estos runners solo deben atender repos propios.
+# =============================================================================
+
+name: actions-runner
+
+x-runner: &runner
+  image: ghcr.io/actions/actions-runner:${RUNNER_IMAGE_TAG:-latest}
+  # root SOLO para remapear uid/gid al arrancar; el runner corre como usuario normal (entrypoint.sh).
+  user: root
+  entrypoint: ["/bin/bash", "/entrypoint.sh"]
+  # tini como PID 1: reenvia el SIGTERM de `docker compose down` al runner para que suelte el job limpio.
+  init: true
+  restart: unless-stopped
+  stop_grace_period: 1m
+  network_mode: host
+  volumes:
+    - ./entrypoint.sh:/entrypoint.sh:ro
+    - /var/run/docker.sock:/var/run/docker.sock
+    - ${HOST_HOME:?Falta HOST_HOME en actions-runner/.env}:${HOST_HOME}
+
+x-runner-env: &runner-env
+  GITHUB_URL: ${GITHUB_URL:?Falta GITHUB_URL en actions-runner/.env}
+  # Solo hace falta en el PRIMER arranque de cada runner; despues puede quedar vacio.
+  RUNNER_TOKEN: ${RUNNER_TOKEN:-}
+  RUNNER_GROUP: ${RUNNER_GROUP:-Default}
+  RUNNER_LABELS: ${RUNNER_LABELS:-}
+  HOST_HOME: ${HOST_HOME}
+  RUNNERS_DIR: ${RUNNERS_DIR:?Falta RUNNERS_DIR en actions-runner/.env}
+  RUNNER_UID: ${RUNNER_UID:?Falta RUNNER_UID en actions-runner/.env}
+  RUNNER_GID: ${RUNNER_GID:?Falta RUNNER_GID en actions-runner/.env}
+  DOCKER_GID: ${DOCKER_GID:?Falta DOCKER_GID en actions-runner/.env}
+
+services:
+  runner-1:
+    <<: *runner
+    container_name: ${RUNNER_NAME_PREFIX:?Falta RUNNER_NAME_PREFIX en actions-runner/.env}-1
+    environment:
+      <<: *runner-env
+      RUNNER_NAME: ${RUNNER_NAME_PREFIX}-1
+
+  runner-2:
+    <<: *runner
+    container_name: ${RUNNER_NAME_PREFIX}-2
+    environment:
+      <<: *runner-env
+      RUNNER_NAME: ${RUNNER_NAME_PREFIX}-2

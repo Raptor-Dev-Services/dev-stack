@@ -8,3 +8,5 @@ minio.license
 data/
 # Links de Dashy a los productos: nombra productos, igual que productos.conf.
 dashy/productos.yml
+# Runners de GitHub Actions: su .env lleva el token de registro.
+actions-runner/.env

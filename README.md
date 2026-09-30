@@ -258,6 +258,14 @@ docker compose -f compose-dev.yaml down -v   # BORRA bases y buckets de todos lo
 `down -v` borra los volumenes con nombre (Postgres, MinIO, Redis) pero **no** `./data`: los logs,
 metricas, tableros y monitores sobreviven. Para borrarlos, se borra la carpeta.
 
+### Runners de GitHub Actions
+
+En [`actions-runner/`](actions-runner/README.md), aparte de este compose: N runners self-hosted en
+contenedores sobre la imagen oficial, con su propio `compose.yaml` y su propio `.env` (lleva el token de
+registro). `compose-dev.yaml` no los toca, pero **`bajar-todo.sh` si los para**: detiene todo contenedor
+que siga corriendo. Despues de usarlo, `docker compose up -d` dentro de `actions-runner/` para
+recuperarlos.
+
 ---
 
 ## Como esta armado
