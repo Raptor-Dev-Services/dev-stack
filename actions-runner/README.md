@@ -99,7 +99,7 @@ del host. **El registro real y un job real no se han probado todavia**: eso pasa
   carpeta `state` y levantalo con token).
 - **Varios runners pueden desplegar a la vez.** Los jobs de deploy a staging tienen que declarar su grupo
   de `concurrency` para ir en fila (los de SocioFit ya lo hacen).
-- **`../bajar-todo.sh` los para** (detiene todo contenedor que siga corriendo), y con
+- **`../stack/bajar-todo.sh` los para** (detiene todo contenedor que siga corriendo), y con
   `restart: unless-stopped` no vuelven solos: `docker compose up -d` aqui despues de usarlo.
 - **El runner viejo del host** (`~/actions-runner`, servicio de systemd) sigue registrado aparte. Apagalo
   cuando estos esten probados, y despues quitalo en GitHub.

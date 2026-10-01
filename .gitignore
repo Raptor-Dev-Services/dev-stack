@@ -1,12 +1,24 @@
 .DS_Store
-.env
-# Lo unico que sabe que productos existen. Ver productos.conf.example.
-productos.conf
-PUERTOS.local.md
-minio.license
+
+# --- stack/ ------------------------------------------------------------------
+stack/.env
+# Lo unico que sabe que productos existen. Ver stack/productos.conf.example.
+stack/productos.conf
+stack/PUERTOS.local.md
+stack/minio.license
 # Datos del monitoreo (Seq, Prometheus, Grafana, Uptime Kuma), en bind mount junto al compose.
-data/
+stack/data/
 # Links de Dashy a los productos: nombra productos, igual que productos.conf.
-dashy/productos.yml
-# Runners de GitHub Actions: su .env lleva el token de registro.
+stack/dashy/productos.yml
+
+# --- actions-runner/ ---------------------------------------------------------
+# Su .env lleva el token de registro.
 actions-runner/.env
+
+# --- Restos de antes de que el stack viviera en stack/ ----------------------
+# Si un clon viejo todavia tiene estos en la raiz, que git no los vea mientras se mueven a stack/.
+/.env
+/productos.conf
+/minio.license
+/data/
+/dashy/productos.yml
