@@ -144,7 +144,7 @@ Los builds y el registro de imagenes llenan el disco mas rapido que cualquier ot
 | Imagenes en el registro (Harbor) | Retencion por proyecto (*Policy > Tag retention*, p. ej. conservar las ultimas 10) **y** garbage collection programado (*Administration > Clean Up*). La retencion solo marca: sin el GC el espacio no vuelve. |
 | Capas y cache de build de Docker | `docker system df` para ver cuanto ocupa; `docker builder prune` y `docker image prune` de vez en cuando. |
 | Carpetas de trabajo de los runners | Viven en `RUNNERS_DIR/<runner>/_work`; el checkout las limpia, pero los artefactos grandes de un job pueden quedarse. |
-| Datos del monitoreo | Seq y Prometheus en `../stack/data/`; Prometheus guarda 15 dias por omision. |
+| Datos del monitoreo | Seq y Prometheus en `../stack/data/`; Prometheus borra lo que pasa de `PROMETHEUS_RETENTION` (en `../stack/.env`). |
 
 Si la maquina tiene un segundo disco, lo mejor es llevar ahi `/var/lib/docker` o al menos los datos del
 registro, para que un disco lleno no tumbe el sistema.
