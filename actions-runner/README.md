@@ -103,3 +103,48 @@ del host. **El registro real y un job real no se han probado todavia**: eso pasa
   `restart: unless-stopped` no vuelven solos: `docker compose up -d` aqui despues de usarlo.
 - **El runner viejo del host** (`~/actions-runner`, servicio de systemd) sigue registrado aparte. Apagalo
   cuando estos esten probados, y despues quitalo en GitHub.
+
+## Recursos: CPU y disco
+
+Varios runners en la misma maquina comparten el CPU con todo lo demas que corre ahi (el stack, Harbor, las
+APIs de staging). Sin limites, unos pocos builds a la vez la saturan.
+
+### CPU: limitar cada build
+
+Un `dotnet build` abre **un proceso de MSBuild por nucleo logico**. Con 4 runners compilando a la vez en una
+maquina de 12 hilos, eso son unos 30 procesos de MSBuild peleandose 12 hilos: el CPU queda al 100%, el load
+average pasa de 39 y todo lo demas en el server se alenta. Medido el 2026-10-01 con un i5 de 6 nucleos y 12
+hilos: el uso de RAM era modesto y la temperatura, normal (71-75 °C). El cuello era solo el CPU.
+
+En los pipelines, cada build y cada test van con:
+
+```sh
+dotnet build ... -m:3 -nodeReuse:false
+dotnet test  ... -m:3 -nodeReuse:false
+```
+
+- **`-m:3`**: como mucho 3 procesos por build. La regla practica es `hilos / runners`, con 12 hilos y 4
+  runners da 3. Un build solo tarda casi lo mismo, porque la paralelizacion de MSBuild rinde poco pasados
+  unos pocos procesos, y deja aire para la base de datos y las APIs.
+- **`-nodeReuse:false`**: sin esto, los procesos de MSBuild se quedan vivos un rato despues de terminar el
+  build, esperando reutilizarse. En CI no se reutilizan nunca, asi que solo ocupan RAM y se acumulan.
+
+Si se agregan o quitan runners, ajusta el `-m`. La alternativa es correr menos runners: menos builds a la
+vez, pero cada uno mas rapido.
+
+Para ver la carga en vivo: `btop` (o `htop`). Muchos `MSBuild.dll` y un load average muy por encima del
+numero de hilos son la firma de este problema.
+
+### Disco: lo que mas crece
+
+Los builds y el registro de imagenes llenan el disco mas rapido que cualquier otra cosa:
+
+| Que crece | Como se contiene |
+|---|---|
+| Imagenes en el registro (Harbor) | Retencion por proyecto (*Policy > Tag retention*, p. ej. conservar las ultimas 10) **y** garbage collection programado (*Administration > Clean Up*). La retencion solo marca: sin el GC el espacio no vuelve. |
+| Capas y cache de build de Docker | `docker system df` para ver cuanto ocupa; `docker builder prune` y `docker image prune` de vez en cuando. |
+| Carpetas de trabajo de los runners | Viven en `RUNNERS_DIR/<runner>/_work`; el checkout las limpia, pero los artefactos grandes de un job pueden quedarse. |
+| Datos del monitoreo | Seq y Prometheus en `../stack/data/`; Prometheus guarda 15 dias por omision. |
+
+Si la maquina tiene un segundo disco, lo mejor es llevar ahi `/var/lib/docker` o al menos los datos del
+registro, para que un disco lleno no tumbe el sistema.
