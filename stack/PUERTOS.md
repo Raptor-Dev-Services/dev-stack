@@ -97,6 +97,15 @@ ss -ltnp | sort -t: -k2 -n     # o: sudo lsof -nP -iTCP -sTCP:LISTEN
 
 ### Hostnames publicos (tunel de Cloudflare)
 
+**Solo salen la API y el panel de cada producto**, mas el `9000` de MinIO. Nada mas: el resto de la
+infraestructura la publica el dev-stack atada a `127.0.0.1` y es inalcanzable desde fuera. Exponer el
+`5432` abriria la base de **todos** los productos a la vez.
+
+El `9000` es la excepcion que parece un descuido y no lo es: los enlaces de archivos se **firman** con
+ese host, y la firma incluye el host, asi que no se puede reescribir despues. Si se firmaran con
+`127.0.0.1`, el navegador no resuelve esa direccion y todo adjunto se ve roto mientras la API responde
+200.
+
 De **un solo nivel**: el certificado gratuito cubre `*.raptorcloud.dev`, no `producto.api.raptorcloud.dev`.
 
 | Hostname | Apunta a |
