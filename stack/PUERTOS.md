@@ -97,9 +97,26 @@ ss -ltnp | sort -t: -k2 -n     # o: sudo lsof -nP -iTCP -sTCP:LISTEN
 
 ### Hostnames publicos (tunel de Cloudflare)
 
-**Solo salen la API y el panel de cada producto**, mas el `9000` de MinIO. Nada mas: el resto de la
-infraestructura la publica el dev-stack atada a `127.0.0.1` y es inalcanzable desde fuera. Exponer el
-`5432` abriria la base de **todos** los productos a la vez.
+De cada **producto** salen su API y su panel. De la **infraestructura compartida sale casi todo**:
+`files` (MinIO API, 9000), `minio` (consola, 9001), `seq` (5380), `mailpit` (buzon, 8025), `grafana`
+(3000), `prometheus` (9090), `kuma` (3001), `dashy` (4000) y `harbor` (8088).
+
+> **Correccion del 2026-10-02.** Una version anterior de este parrafo decia que solo salian la API y
+> el panel de cada producto y que el resto era inalcanzable "porque el dev-stack lo ata a
+> `127.0.0.1`". El razonamiento es seductor y **falso**: el tunel de Cloudflare corre EN el servidor,
+> asi que alcanza `127.0.0.1` igual que cualquier proceso local. **Atar a loopback protege de la red,
+> no del tunel.** Comprobado pidiendo cada hostname desde internet: mailpit, minio, seq, dashy y
+> harbor devuelven **200 sin cabecera de Cloudflare Access**; grafana, prometheus y kuma, 302 a su
+> propio login.
+
+Lo que de verdad **no** tiene ruta en el tunel son cuatro: Postgres (`5432`), Redis (`6379`), el SMTP
+de Mailpit (`1025`) y la ingesta de Seq (`5341`). Exponer el `5432` abriria la base de **todos** los
+productos a la vez.
+
+> **El hostname que mas conviene cerrar es `mailpit`.** Ese buzon guarda los correos de **todos** los
+> productos de staging, incluidos los enlaces de alta de personal y de recuperar contrasena: quien lo
+> encuentre puede leerlos y fijarse una contrasena. La consola de MinIO es el mismo caso sobre los
+> archivos subidos. Se arregla con una politica de Access delante de los hostnames de administracion.
 
 El `9000` es la excepcion que parece un descuido y no lo es: los enlaces de archivos se **firman** con
 ese host, y la firma incluye el host, asi que no se puede reescribir despues. Si se firmaran con
