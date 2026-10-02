@@ -61,6 +61,54 @@ tocar Postgres; para saber si el sistema sirve peticiones, usa la de disponibili
 Usa `strictPort: true` en todos: sin el, Vite toma el siguiente puerto libre y el front
 queda donde nadie lo busca.
 
+## Staging en `raptor-server` (el servidor propio)
+
+Esta tabla es **del servidor**, no de tu maquina. Ahi conviven los productos desplegados por sus
+pipelines, Harbor y el dev-stack. Antes de asignarle un puerto a un producto nuevo, mirala y
+**reserva el tuyo aqui en el mismo commit**: hay varios agentes trabajando en paralelo y el que no
+reserva, choca.
+
+| Puerto | Quien | Contenedor |
+|---|---|---|
+| `8080` | C-MSA API | `cmsa-api-staging` *(solo EXPOSE, no publicado)* |
+| `8081` | **SocioFit API** | `sociofit-api-staging` **(host mode: NO sale en `docker ps`)** |
+| `8082` | SocioFit panel | `sociofit-web-staging` |
+| `8083` | **SocioRent API** | `sociorent-api-staging` **(host mode: NO sale en `docker ps`)** |
+| `8084` | C-MSA panel | `cmsa-front-staging` |
+| `8085` | **SocioRent panel** | `sociorent-web-staging` |
+| `8086` | Pagina de Raptor | `raptor-page` |
+| `8088` | Harbor | `nginx` (puerta local) |
+
+**Libres hoy:** `8087`, `8089`, y el rango `8090`-`8099`.
+
+### La trampa: `docker ps` NO muestra todos los puertos ocupados
+
+Un contenedor con `network_mode: host` **comparte la red del host y su columna PORTS sale vacia**.
+`sociofit-api-staging` lleva asi desde el principio: ocupa el 8081 y en `docker ps` no aparece ni una
+sola vez. Lo mismo vale para la API de SocioRent en el 8083.
+
+Si eliges puerto mirando solo `docker ps`, vas a tomar uno ocupado y el choque **no da un error
+claro**: segun quien arranque primero, uno de los dos queda sin atender o contesta el equivocado.
+Para ver lo que de verdad escucha en el servidor:
+
+```sh
+ss -ltnp | sort -t: -k2 -n     # o: sudo lsof -nP -iTCP -sTCP:LISTEN
+```
+
+### Hostnames publicos (tunel de Cloudflare)
+
+De **un solo nivel**: el certificado gratuito cubre `*.raptorcloud.dev`, no `producto.api.raptorcloud.dev`.
+
+| Hostname | Apunta a |
+|---|---|
+| `sociofit-api.raptorcloud.dev` | `localhost:8081` |
+| `sociofit-app.raptorcloud.dev` | `localhost:8082` |
+| `sociorent-api.raptorcloud.dev` | `localhost:8083` |
+| `sociorent-app.raptorcloud.dev` | `localhost:8085` |
+| `files.raptorcloud.dev` | `localhost:9000` (MinIO, compartido por todos) |
+| `harbor.raptorcloud.dev` | Harbor |
+
+
 ## Puertos que NO se pueden usar en macOS
 
 | Puerto | Quien lo tiene | Sintoma |
