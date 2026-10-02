@@ -1,0 +1,29 @@
+# =============================================================================
+# stripe.conf.example - Los listeners de Stripe (modo prueba) de cada producto
+# =============================================================================
+# Copialo a `stripe.conf` (NO se versiona: lleva llaves) y pon una linea por producto que
+# cobre con Stripe. Lo lee el servicio `stripe-cli` del compose, que solo arranca con el
+# perfil `stripe`:
+#
+#     docker compose -f compose-dev.yaml --profile stripe up -d
+#
+# Columnas, separadas por espacios:
+#
+#   producto   nombre corto; sale en los logs y como dispositivo en el dashboard de Stripe
+#   llave      llave SECRETA de prueba de la cuenta del producto (sk_test_... o rk_test_...).
+#              Una por producto: lo ideal es un sandbox de Stripe por producto. Dos lineas con
+#              la misma llave se rechazan (cada API recibiria los cobros de la otra). Una llave
+#              live se rechaza siempre.
+#   destino    URL del webhook de la API, vista DESDE el contenedor:
+#                API corriendo en tu maquina (dotnet run): http://host.docker.internal:<puerto>/<ruta>
+#                API en contenedor en la red devstack:      http://<nombre-del-contenedor>:<puerto>/<ruta>
+#   eventos    opcional: lista separada por comas (sin espacios). Sin ella, llegan todos los
+#              eventos clasicos de la cuenta (--all-snapshot). Mejor listar solo los que la API usa.
+#
+# Al arrancar, el log imprime el secreto de firma (whsec_...) de cada producto: ese valor va en
+# el .env del producto como su secreto de webhook. Es fijo por cuenta, no cambia al reiniciar.
+#     docker logs devstack-stripe-cli | grep "secreto de firma"
+#
+# producto   llave                     destino                                                   eventos
+{{PRODUCTO_A}}  sk_test_CAMBIAME_A   http://host.docker.internal:{{PUERTO_API_A}}/api/v1/stripe/webhook
+{{PRODUCTO_B}}  sk_test_CAMBIAME_B   http://host.docker.internal:{{PUERTO_API_B}}/api/v1/stripe/webhook   checkout.session.completed,customer.subscription.updated

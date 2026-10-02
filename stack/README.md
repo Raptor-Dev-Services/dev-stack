@@ -202,6 +202,35 @@ repo: si importa, guarda una copia aparte. Usa las clases estables (`.title`, `.
 `.overall-status`, `.shadow-box`, `.group-title`, `.item`, `.item-name`, `.incident`,
 `.dark`) y no los atributos `[data-v-...]`, que cambian con cada version de Kuma.
 
+### Stripe en modo prueba (perfil `stripe`)
+
+Los webhooks de Stripe necesitan llegar a la API, y en desarrollo la API no tiene una URL
+publica. El servicio `stripe-cli` lo resuelve: corre un `stripe listen` por producto que
+recibe los eventos de la cuenta de prueba de ese producto y los reenvia a su API.
+
+```sh
+cp stripe.conf.example stripe.conf      # una linea por producto que cobre con Stripe
+docker compose -f compose-dev.yaml --profile stripe up -d
+docker logs devstack-stripe-cli | grep "secreto de firma"
+```
+
+- **Solo arranca con el perfil `stripe`.** Una maquina sin productos que cobren no necesita
+  `stripe.conf` ni este contenedor.
+- **Una llave por producto, y de prueba.** Cada linea lleva la `sk_test_` de la cuenta de ese
+  producto; lo mas limpio es un *sandbox* de Stripe por producto. El script se niega a arrancar
+  con dos productos que comparten llave (cada API procesaria los cobros de la otra), con una llave
+  live, o con la llave de ejemplo sin cambiar.
+- **El secreto de firma** (`whsec_...`) de cada producto sale en el log al arrancar y va en el
+  `.env` del producto como su secreto de webhook. Es fijo por cuenta: no cambia al reiniciar.
+- **El destino se escribe como lo ve el contenedor:** `http://host.docker.internal:<puerto>/...`
+  para una API con `dotnet run` o publicada en un puerto de la maquina (asi es staging), o
+  `http://<contenedor>:<puerto>/...` para una API en contenedor en la red `devstack`.
+- **Si un listener se cae, se reinicia el contenedor entero**: un listener muerto no pasa
+  desapercibido. `docker logs -f devstack-stripe-cli` muestra cada evento con el nombre del
+  producto delante.
+- **No uses a la vez este listener y un webhook del dashboard** apuntando a la misma API: cada
+  evento llegaria dos veces. La API lo aguanta (es idempotente), pero el log se vuelve confuso.
+
 ### Primer arranque: las contrasenas
 
 - **Seq** crea el usuario `SEQ_ADMIN_USER` con `SEQ_ADMIN_PASSWORD`, y **en el primer login

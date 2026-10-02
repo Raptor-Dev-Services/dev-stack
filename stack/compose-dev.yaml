@@ -59,9 +59,11 @@
 # -----------------------------------------------------------------------------
 # LO QUE ESTE ARCHIVO **NO** COMPARTE
 # -----------------------------------------------------------------------------
-# Servicio de un producto = de ese producto. Los listeners de Stripe no estan aqui: cada
-# uno reenvia a UN endpoint con UN secreto de webhook propio, y uno compartido mandaria
-# los eventos de cobro de un producto a la API de otro.
+# Servicio de un producto = de ese producto. La excepcion controlada es `stripe-cli` (perfil
+# `stripe`): un solo contenedor, pero UN listener por producto, cada uno con la llave de
+# prueba de SU cuenta, SU destino y SU secreto de firma. Lo que se evito antes -un listener
+# compartido que mandara los cobros de un producto a la API de otro- lo impide su script:
+# rechaza dos productos con la misma llave y cualquier llave live (ver stripe/escuchar.sh).
 # =============================================================================
 
 name: devstack
@@ -204,6 +206,34 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+
+  # ---------------------------------------------------------------------------
+  # stripe-cli - reenvia los webhooks de Stripe (modo prueba) a la API de cada producto
+  # ---------------------------------------------------------------------------
+  # Solo con el perfil `stripe` (docker compose ... --profile stripe up -d): una maquina sin
+  # productos que cobren no necesita stripe.conf ni este contenedor.
+  #
+  # Un `stripe listen` por linea de ./stripe.conf (no versionado: lleva las llaves sk_test_ de
+  # cada producto). No publica puertos: solo sale a internet hacia Stripe y entra a las APIs.
+  # `host.docker.internal` apunta a la maquina, para las APIs que corren con `dotnet run` o
+  # publicadas en un puerto del host (staging); en Linux lo resuelve el `extra_hosts`.
+  #
+  # El secreto de firma (whsec_...) de cada producto sale en el log al arrancar y va en el .env
+  # del producto. Es fijo por cuenta.
+  stripe-cli:
+    image: stripe/stripe-cli:v1.53.0
+    container_name: devstack-stripe-cli
+    profiles: ["stripe"]
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/stripe/escuchar.sh"]
+    environment:
+      # La CLI pregunta por actualizaciones y manda telemetria: aqui no hay quien conteste.
+      STRIPE_CLI_TELEMETRY_OPTOUT: "1"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./stripe/escuchar.sh:/stripe/escuchar.sh:ro
+      - ./stripe.conf:/stripe/stripe.conf:ro
 
   # ===========================================================================
   # MONITOREO

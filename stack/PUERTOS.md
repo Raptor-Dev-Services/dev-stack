@@ -24,6 +24,7 @@ va en **`PUERTOS.local.md`**, que no se versiona.
 | Dashy | `4000` | http://localhost:4000 (un link a todo lo demas) |
 | docker-socket-proxy | *(ninguno)* | no se publica: Uptime Kuma lo usa como `http://docker-socket-proxy:2375` (solo lectura de contenedores) |
 | node-exporter | *(ninguno)* | no se publica: Prometheus lo lee como `node-exporter:9100` dentro de la red `devstack` |
+| stripe-cli *(perfil `stripe`)* | *(ninguno)* | no se publica: solo sale a Stripe y entra a cada API por la URL de su linea en `stripe.conf` |
 
 Todos se publican en la direccion `DEVSTACK_BIND` del `.env`: `127.0.0.1` los deja solo para
 esta maquina.
