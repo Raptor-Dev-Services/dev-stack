@@ -386,6 +386,41 @@ un `up` falla y **todos** los servicios salen como `Interrupted`, busca la linea
 `pull access denied`. Si prefieres no depender de una licencia, `pgsty/minio` es la build
 comunitaria del mismo codigo; el cambio esta descrito en `compose-dev.yaml`.
 
+### Los archivos locales se quedan en la raiz al migrar del layout viejo
+
+Antes del **2026-09-30** el compose vivia en la raiz del repo, y con el los cuatro archivos que
+**no** se versionan: `.env`, `productos.conf`, `minio.license` y los datos. La reorganizacion movio
+lo versionado a `stack/`, pero **los locales no se mueven solos**: siguen donde estaban hasta que
+alguien corra el paso de migracion.
+
+El sintoma no apunta a eso. En una maquina donde no se corrio:
+
+```
+ERROR: falta productos.conf. Copia productos.conf.example a productos.conf
+```
+
+...y `productos.conf` **si existe** -- en la raiz --, asi que el mensaje parece mentir. Con
+`minio.license` es peor, porque el compose monta `./:/devstack:ro`, o sea **su propio
+directorio**: si el archivo esta en la raiz, MinIO arranca en *offline mode* sin decir que no lo
+encontro.
+
+Comprueba donde estan antes de dar por hecho que faltan:
+
+```sh
+ls minio.license productos.conf stack/minio.license stack/productos.conf
+```
+
+Y si estan en la raiz, copialos -- no los muevas: otra herramienta tuya puede seguir leyendolos de
+ahi --:
+
+```sh
+cp -p minio.license productos.conf stack/
+cd stack && docker compose -f compose-dev.yaml up -d minio minio-init
+```
+
+**Solo esos dos servicios**, no `up -d` a secas: un arranque completo recrea Postgres y se lleva por
+delante las APIs que esten corriendo contra el.
+
 ### Las bases logicas de Redis no aislan
 
 `FLUSHALL` las borra todas y no hay permisos por base. Bastan en desarrollo.
