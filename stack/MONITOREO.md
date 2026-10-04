@@ -1,8 +1,8 @@
 # Monitoreo: las carpetas de Grafana y Prometheus
 
 Como estan armadas, que se versiona y que no, lo que pasa **en el primer arranque en un
-servidor Linux** con los permisos, y como se leen las metricas de la propia maquina
-(node-exporter).
+servidor Linux** con los permisos, como se leen las metricas de la propia maquina
+(node-exporter) y como Uptime Kuma vigila contenedores sin tener el socket de Docker.
 
 El resumen de que es cada pieza y como se conecta un producto esta en el `README.md`, seccion
 *Monitoreo*. Este documento es la parte operativa.
@@ -213,6 +213,60 @@ descriptivas de udev; las metricas salen completas.
 
 ---
 
+## Uptime Kuma: monitorear contenedores
+
+Ademas de sondear el `/health` de cada API, Kuma puede vigilar un contenedor por su nombre
+(monitor **Docker Container**: arriba, caido o reiniciandose). Para eso necesita la API de
+Docker, y **no se le monta el socket**: montarlo es darle root sobre la maquina -el `:ro`
+protege el archivo, no lo que la API deja hacer- a un servicio que sale por el tunel.
+
+Quien tiene el socket es `docker-socket-proxy`, en la red `devstack` y **sin puerto
+publicado**. Solo deja pasar lecturas de contenedores (`CONTAINERS=1`, `POST=0`): nada de
+start, stop, exec ni crear.
+
+### Darlo de alta en Kuma (una vez por maquina)
+
+Vive en `data/uptime-kuma`, no en el repo: en un servidor nuevo hay que repetirlo.
+
+1. **Settings -> Docker Hosts -> Setup Docker Host**.
+2. Tipo de conexion: **TCP / HTTP**.
+3. URL:
+
+   ```
+   http://docker-socket-proxy:2375
+   ```
+
+4. **Test** y guardar.
+
+Despues, cada monitor: tipo **Docker Container**, el Docker Host de arriba y el nombre exacto
+del contenedor (`sociofit-api-staging`, `devstack-postgres`...), el de `docker ps`.
+
+En el servidor Kuma solo escucha en `127.0.0.1:3001`; desde tu maquina se entra con un tunel:
+
+```sh
+ssh -L 3001:127.0.0.1:3001 raptor@<servidor>    # y abrir http://localhost:3001
+```
+
+### Comprobar el proxy desde la red de Kuma
+
+`docker ps` no basta: el proxy no trae healthcheck, asi que dice `Up` sin `(healthy)` aunque
+no conteste. Estas tres pruebas corren con la red de Kuma, que es desde donde importa:
+
+```sh
+# 1. Lee contenedores: debe salir JSON (el "broken pipe" es del head, no un error)
+docker run --rm --network container:devstack-uptime-kuma curlimages/curl -s http://docker-socket-proxy:2375/containers/json | head -c 300; echo
+
+# 2. Una escritura se rechaza: debe dar 403. Apunta a Redis a proposito: si el proxy
+#    estuviera mal, lo reiniciaria, y Redis vuelve en un segundo.
+docker run --rm --network container:devstack-uptime-kuma curlimages/curl -s -o /dev/null -w '%{http_code}\n' \
+  -X POST http://docker-socket-proxy:2375/containers/devstack-redis/restart
+
+# 3. Lo que no es de contenedores tambien se rechaza: debe dar 403
+docker run --rm --network container:devstack-uptime-kuma curlimages/curl -s -o /dev/null -w '%{http_code}\n' http://docker-socket-proxy:2375/images/json
+```
+
+---
+
 ## Diagnostico
 
 ```sh
@@ -231,3 +285,5 @@ ls -ln data/                         # en Linux: el dueno debe ser 472 y 65534
 | Target `node` en `down` | `docker logs devstack-node-exporter`; y que el job apunte a `node-exporter:9100`, no a `host.docker.internal` ni al tunel |
 | En la pagina de targets el link `http://node-exporter:9100/metrics` no abre | es normal: es la direccion desde Prometheus, no desde tu navegador. Lo que importa es la columna *State* |
 | Muestras descartadas como `out of order` | el lote llego con mas de 30 min de atraso; ver `out_of_order_time_window` en `prometheus.yml` |
+| Kuma: el **Test** del Docker Host falla | la URL apunta a `localhost`, a `/var/run/docker.sock` o lleva `https`; es `http://docker-socket-proxy:2375`. Si esta bien, `docker logs devstack-docker-socket-proxy` y la prueba 1 de arriba |
+| Kuma: un monitor Docker Container sale caido con el contenedor arriba | el nombre no es el de `docker ps` (sin la `/` inicial), o el contenedor se recreo con otro nombre |
