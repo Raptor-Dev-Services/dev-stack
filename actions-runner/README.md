@@ -146,9 +146,24 @@ Los builds y el registro de imagenes llenan el disco mas rapido que cualquier ot
 | Que crece | Como se contiene |
 |---|---|
 | Imagenes en el registro (Harbor) | Retencion por proyecto (*Policy > Tag retention*, p. ej. conservar las ultimas 10) **y** garbage collection programado (*Administration > Clean Up*). La retencion solo marca: sin el GC el espacio no vuelve. |
-| Capas y cache de build de Docker | `docker system df` para ver cuanto ocupa; `docker builder prune` y `docker image prune` de vez en cuando. |
+| Capas y cache de build de Docker | Limpieza diaria `mantenimiento/limpiar-docker.sh` (workflow `limpieza-docker.yml`, ver abajo). `docker system df` para ver cuanto ocupa. |
 | Carpetas de trabajo de los runners | Viven en `RUNNERS_DIR/<runner>/_work`; el checkout las limpia, pero los artefactos grandes de un job pueden quedarse. |
 | Datos del monitoreo | Seq y Prometheus en `../stack/data/`; Prometheus borra lo que pasa de `PROMETHEUS_RETENTION` (en `../stack/.env`). |
 
 Si la maquina tiene un segundo disco, lo mejor es llevar ahi `/var/lib/docker` o al menos los datos del
 registro, para que un disco lleno no tumbe el sistema.
+
+### Limpieza diaria de Docker
+
+`.github/workflows/limpieza-docker.yml` corre `mantenimiento/limpiar-docker.sh` cada dia a las 04:00 de
+Ciudad de Mexico en estos runners. Lo que borra y lo que no, con el porque, esta en la cabecera del script;
+en corto: contenedores detenidos de mas de 24 h que **no** son de compose, imagenes colgadas, versiones
+viejas de las imagenes **propias** (se conservan 3 por repositorio) y cache de build de mas de 7 dias
+(dejando 20 GB). **Nunca volumenes** ni imagenes base.
+
+- **Arranca en seco**: dice que borraria. Se enciende con la variable del repositorio
+  `LIMPIEZA_DOCKER_REAL=true`; se apaga borrandola. Para una corrida a mano: *Actions > Limpieza de Docker >
+  Run workflow* (con la casilla "real" o sin ella), o en el server `bash mantenimiento/limpiar-docker.sh`
+  (en seco) / `--real`.
+- **No escucha `pull_request` a proposito**: el repo es publico y estos runners tienen el socket de Docker.
+

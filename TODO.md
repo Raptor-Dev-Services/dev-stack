@@ -18,17 +18,21 @@ Docker del server, y el disco se llena.
 
 **Lo que se va a hacer:**
 
-- [ ] Revisar que cada pipeline limpie solo lo suyo (hoy todos los pasos usan `docker run --rm` y los Postgres
-      de Testcontainers se borran solos). Confirmarlo y corregir el paso que deje algo.
-- [ ] Limpieza **una vez al día en la madrugada**, cuando no corre nada, con filtros seguros:
-  - [ ] contenedores detenidos con más de 24 h: `docker container prune --filter "until=24h"`;
-  - [ ] imágenes sin usar con más de 7 días: `docker image prune -a --filter "until=168h"`, respetando las
-        que tengan una etiqueta de "conservar" (por ejemplo la imagen de build de Android);
-  - [ ] caché de build con más de 7 días, dejando un mínimo para que los builds sigan rápidos:
-        `docker builder prune --filter "until=168h" --keep-storage 20gb`;
-  - [ ] **nunca volúmenes**.
-- [ ] Que imprima el espacio antes y después (`docker system df`) para ver cuánto libera.
-- [ ] Dónde: mi apuesta es un **workflow programado (`schedule`) en este repo** que corra en los runners
-      propios, para que quede versionado y se vea en GitHub cuándo corrió y cuánto liberó. La alternativa es
-      un script con un timer de systemd en el server.
-- [ ] Documentarlo en `actions-runner/README.md`, en la sección "Recursos: CPU y disco".
+- [x] Revisar que cada pipeline limpie solo lo suyo. **Confirmado el 2026-10-05** en los tres repos de SocioFit:
+      todo `docker run` lleva `--rm`; el unico `docker create` (leer el SQL de la imagen distroless de la API)
+      hace `docker rm -f` despues. Lo que si se acumula son las imagenes que construyen (`docker build`).
+- [x] Limpieza **una vez al dia en la madrugada** (2026-10-05): `mantenimiento/limpiar-docker.sh`, corrido por
+      `.github/workflows/limpieza-docker.yml` (04:00 de Ciudad de Mexico). **Arranca en seco**; se enciende con
+      la variable del repo `LIMPIEZA_DOCKER_REAL=true`. Se cambio el plan original en un punto: no se usa
+      `docker image prune -a --filter until=168h`, porque `until` mira cuando se CREO la imagen y borraria cada
+      noche las imagenes base (SDK de .NET, Node), que casi siempre se crearon hace mas de 7 dias. En su lugar,
+      de las imagenes PROPIAS (Harbor y la de build de Android) se conservan las 3 mas recientes por
+      repositorio; las base no se tocan. Contenedores detenidos de mas de 24 h fuera de compose, imagenes
+      colgadas de mas de 24 h y cache de build de mas de 7 dias con 20 GB minimos. Nunca volumenes.
+- [ ] **Bloqueado: el repo es publico.** Por omision GitHub no deja que un repo publico use los runners del
+      grupo de la organizacion, y si se permite, un fork podria intentar correr codigo en el server (el
+      workflow solo escucha `schedule` y `workflow_dispatch` para cerrar eso). Decidir: hacer `dev-stack`
+      privado, o permitir repos publicos en el grupo de runners, o mover la limpieza a un timer de systemd
+      en el server con el mismo script.
+- [ ] Primera corrida en seco revisada y encendido real.
+- [x] Documentarlo en `actions-runner/README.md`, en la seccion "Recursos: CPU y disco".

@@ -1,0 +1,48 @@
+# Limpieza diaria del Docker del server (plan en TODO.md, pedido el 2026-10-05).
+#
+# Corre en los runners propios, que comparten el Docker del server con el stack y staging. El script
+# (mantenimiento/limpiar-docker.sh) nunca toca volumenes ni contenedores de compose, y solo borra versiones
+# viejas de las imagenes PROPIAS; el porque de cada filtro esta en su cabecera.
+#
+# ARRANCA EN SECO (regla dry-run-rollout): dice que borraria y no borra nada. Para encenderlo, la variable del
+# repositorio LIMPIEZA_DOCKER_REAL=true (Settings > Secrets and variables > Actions > Variables), despues de
+# revisar una corrida en seco. Apagarlo es borrar la variable, sin desplegar nada.
+#
+# Solo `schedule` y `workflow_dispatch`, a proposito: el repo es PUBLICO y estos runners tienen el socket de
+# Docker del server (equivale a root). Un `pull_request` aqui dejaria que un fork corriera codigo en el server.
+name: Limpieza de Docker
+
+on:
+  schedule:
+    # 10:00 UTC = 04:00 en Ciudad de Mexico, cuando no corre ningun pipeline.
+    - cron: "0 10 * * *"
+  workflow_dispatch:
+    inputs:
+      real:
+        description: "Borrar de verdad (si no, solo dice que borraria)"
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: limpieza-docker
+  cancel-in-progress: false
+
+jobs:
+  limpiar:
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Limpiar
+        env:
+          REAL: ${{ inputs.real == true || vars.LIMPIEZA_DOCKER_REAL == 'true' }}
+        run: |
+          if [ "$REAL" = "true" ]; then
+            bash mantenimiento/limpiar-docker.sh --real
+          else
+            bash mantenimiento/limpiar-docker.sh
+          fi
