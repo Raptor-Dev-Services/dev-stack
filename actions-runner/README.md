@@ -16,8 +16,12 @@ oficial ya trae el CLI. Asi:
 - estos runners sirven para cualquier proyecto sin tocarlos;
 - no hay imagen propia que construir, versionar ni parchar.
 
-La excepcion futura seria Android (Android SDK + Gradle no caben bien en un `docker run` por paso): si
-llega, se agrega un runner con imagen propia y su etiqueta, solo para eso.
+Android tampoco fue excepcion (2026-10-04): el repo de la app trae su propio `ci/android/Dockerfile` (JDK,
+Node, Android SDK, NDK, CMake, eas-cli), el pipeline lo construye en el Docker del host etiquetado con la
+huella del archivo, y corre el build con `docker run` como los demas. Las caches de Gradle y npm viven en el
+home del host. El primero que lo usa es `sociofit-appmobile` (`android-release.yml`); la plantilla esta en la
+skill `google-play-publish` del catalogo. Un build de Android pide mas que uno de .NET: el pipeline lo limita
+a `--cpus 8 --memory 12g` y 6 workers de Gradle.
 
 ## Arrancar
 
