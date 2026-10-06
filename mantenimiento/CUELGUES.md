@@ -1,0 +1,137 @@
+# Cuelgues del server: investigacion abierta
+
+**Estado al 2026-10-06 ~02:00 UTC: sin causa confirmada.** El server queda instrumentado para que la
+proxima caida deje rastro. Lo que sigue es lo medido, lo descartado y que hacer cuando vuelva a pasar.
+
+## El sintoma
+
+El server (Ubuntu, kernel 7.0.0-34, i5 de 6 nucleos / 12 hilos, 30 GB de RAM, NVMe) **se congela sin
+dejar nada en el log** y hay que reiniciarlo. El journal de cada arranque caido termina a media frase, sin
+lineas de apagado, y al arrancar ext4 hace `orphan cleanup on readonly fs` y journald avisa
+`system.journal corrupted or uncleanly shut down`.
+
+| Arranque | Desde | Hasta | Como termino |
+|---|---|---|---|
+| -7 | 10-01 00:33 | 10-01 01:43 | apagado limpio (instalacion inicial) |
+| -6 | 10-01 01:46 | 10-03 21:32 | apagado limpio, **2.5 dias estable** |
+| -5 | 10-03 21:32 | 10-04 16:38 | **caida** |
+| -4 | 10-04 16:50 | 10-04 21:58 | **caida** |
+| -3 | 10-04 22:02 | 10-04 22:59 | **caida** |
+| -2 | 10-04 23:01 | 10-05 07:04 | **caida** |
+| -1 | 10-05 07:07 | 10-06 00:25 | **caida** |
+| (siguiente) | 10-06 00:29 | 10-06 01:33 | reinicio LIMPIO (`systemd-reboot.service`): alguien corrio `reboot`, no fue caida |
+
+Horas en UTC. Las ultimas lineas de cada arranque caido son de Docker desmontando un contenedor (veth,
+overlayfs, buildkit), pero eso **no prueba nada**: hasta el 2026-10-06 journald escribia a disco cada 5 min,
+asi que lo ultimo antes del corte se perdia.
+
+## Lo que esta descartado, y con que
+
+- **Regresion de kernel o de Docker:** el kernel 7.0.0-34, Docker 29.8 y containerd 2.3.6 se instalaron el
+  10-01, y el server aguanto 2.5 dias con ellos. Del 10-01 al 10-04 solo se instalo openssl y `tree`
+  (`/var/log/apt/history.log`).
+- **Disco lleno:** 57% del raiz, inodos al 13%.
+- **Memoria:** bajo una rafaga de CI completa (10-06 01:09, 6 corridas de SocioFit, load 52) el vigia
+  registro como minimo **18 GB libres**, swap 4 MB y presion de memoria 0, escribiendo a disco cada 5 s.
+  Tampoco hay OOM ni en el kernel ni en systemd-oomd en ningun arranque.
+- **Ruido que NO es la causa:** los `ACPI BIOS Error ... AE_ALREADY_EXISTS` y `MMIO Stale Data` (firmware,
+  salen en todo arranque), el `e1000e Interrupt Throttling Rate` (es la tarjeta de red, no calor), el
+  `healthcheck failed ... only one connection allowed` de dockerd (sesion de BuildKit de un cliente de
+  build) y `nvme0n1p2: Can't mount, would change RO state` (sale en todo apagado limpio).
+
+## Lo que si se sabe
+
+**Todas las caidas fueron con CI corriendo en el server.** Cruzado con `gh run list` de los repos de la
+organizacion:
+
+| Dia | Corridas de CI | Caidas |
+|---|---|---|
+| 10-03 | 26 | 0 |
+| 10-04 | 251 | 3 |
+| 10-05 | 201 | 1 |
+| 10-06 (hasta 00:35) | 6 | 1 |
+
+En cada caida habia jobs en vuelo que terminaron estirados, cancelados o fallidos (p. ej. un pipeline de
+`sociofit-webapi` de 3-5 min que duro 07:02 -> 07:21 el 10-05). **Pero la carga sola no basta:** hubo horas
+de CI sin caida (10-04 17:00-21:50), y la rafaga del 10-06 01:09 tambien se aguanto.
+
+**La temperatura sube mucho bajo carga:** 86 °C de pico el 10-06 01:26 (umbral `high` 82, `crit` 100), sin
+ningun aviso de throttling. En reposo esta en 39-45 °C. El 2026-10-01 se habian medido 71-75 °C (ver
+`actions-runner/README.md`, "Recursos: CPU y disco").
+
+## Hipotesis abiertas, en orden
+
+1. **Hardware bajo picos sostenidos:** fuente de poder o RAM. Encaja con un corte sin una sola linea de log
+   y con que pase solo tras horas de CI casi continuo.
+2. **Temperatura** bajo carga larga: 86 °C en 15 min de rafaga; las caidas vinieron tras horas.
+3. **Congelamiento del kernel** (lockup) que antes no dejaba rastro; con la instrumentacion de abajo, ahora
+   deberia entrar en panic, registrarlo y reiniciarse solo a los 10 s.
+
+## Instrumentacion instalada en el server (2026-10-06)
+
+Todo esto vive **en el server, fuera de este repo** salvo el vigia, que esta versionado aqui:
+
+| Que | Donde | Para que |
+|---|---|---|
+| journald escribe cada 10 s | `/etc/systemd/journald.conf.d/sync.conf` (`SyncIntervalSec=10s`) | que lo ultimo antes del corte no se pierda |
+| panic ante lockup | `/etc/sysctl.d/99-cuelgues.conf` (`kernel.panic=10`, `softlockup_panic=1`, `hardlockup_panic=1`, `hung_task_panic=1`) | si es el kernel, se reinicia solo y deja el motivo |
+| vigia | [`vigia.sh`](vigia.sh) en `/usr/local/bin/`, [`vigia.service`](vigia.service) habilitado | temp, memoria, presion, carga y contenedores cada 5 s en `/var/log/vigia.log`, con `sync` por linea |
+| `lm-sensors` | paquete | `sensors` |
+
+El journal ya era persistente (`/var/log/journal` existe; `journalctl --list-boots` muestra arranques viejos).
+
+**Cuando se cierre la investigacion, quitarlo:** `SyncIntervalSec=10s` gasta escrituras al NVMe, y
+`hung_task_panic=1` reinicia el server ante una tarea bloqueada >120 s, que en un disco lento puede ser un
+falso positivo.
+
+```sh
+sudo systemctl disable --now vigia && sudo rm /etc/systemd/system/vigia.service /usr/local/bin/vigia.sh
+sudo rm /etc/systemd/journald.conf.d/sync.conf /etc/sysctl.d/99-cuelgues.conf
+sudo systemctl restart systemd-journald && sudo reboot   # el sysctl vuelve a su valor al reiniciar
+```
+
+## Cuando vuelva a caer
+
+```sh
+# 1. Confirmar que fue caida y no reinicio limpio: si al final sale "Reached target reboot.target", fue a mano
+journalctl --list-boots | tail -3
+journalctl -b -1 -n 40 --no-pager -o short-iso | cut -c1-200
+
+# 2. El kernel del arranque caido (ahora con escritura cada 10 s)
+journalctl -b -1 -k -p warning --no-pager | tail -30
+journalctl -b -1 -k --no-pager | grep -iE "panic|lockup|hung_task|blocked for|oom|mce|hardware error|nvme"
+
+# 3. Como estaba el server justo antes
+tail -40 /var/log/vigia.log
+awk '{t=$2;sub(/temp=/,"",t);f=$3;sub(/libre=/,"",f);sub(/MB/,"",f);c=$6;sub(/carga=/,"",c);
+  if(t+0>mt){mt=t+0;wt=$1} if(mf==""||f+0<mf){mf=f+0;wf=$1} if(c+0>mc){mc=c+0;wc=$1}}
+  END{print "temp max:",mt,"C a las",wt; print "libre min:",mf,"MB a las",wf; print "carga max:",mc,"a las",wc}' /var/log/vigia.log
+
+# 4. Si hubo kernel panic con volcado
+ls -la /var/lib/systemd/pstore /sys/fs/pstore 2>/dev/null
+```
+
+Como leerlo:
+
+| Lo que se ve | Apunta a | Siguiente paso |
+|---|---|---|
+| Panic / lockup / hung_task en el kernel, y el server volvio solo a los ~10 s | kernel | buscar el mensaje; probar otro kernel desde GRUB ("Advanced options") |
+| Vigia: `temp` subiendo hacia 90-100 °C en los ultimos minutos | calor | limpiar/ventilar la mini PC; bajar runners o hilos por build |
+| Vigia: `libre` cayendo y `psi_mem` alto | memoria (hoy descartada, pero confirmar) | `mem_limit` a los runners |
+| Todo normal hasta la ultima linea, nada en el kernel, y no volvio solo | hardware: fuente o RAM | `memtest86+` desde GRUB una noche; revisar fuente/eliminador |
+
+**Pregunta que ayuda a separar:** tras cada caida, ¿el server estaba **apagado** (apunta a fuente/calor) o
+**congelado con la luz encendida** (apunta a kernel/RAM)? Anotarlo en la tabla de arriba.
+
+## Pendientes
+
+- [ ] Esperar la proxima caida con la instrumentacion puesta y leerla con la seccion de arriba.
+- [ ] Averiguar quien reinicio el 10-06 01:33 (`journalctl -b <n> _COMM=sudo`, `-u systemd-logind`;
+      `grep -i automatic-reboot /etc/apt/apt.conf.d/50unattended-upgrades`).
+- [ ] Opcional, en una ventana donde no estorbe tumbar staging: `stress-ng --cpu 0 --timeout 10m` (solo
+      calor) y luego `stress-ng --vm 4 --vm-bytes 90% --timeout 10m` (solo memoria), mirando
+      `watch -n5 'tail -1 /var/log/vigia.log'`.
+- [ ] Mitigacion mientras tanto: bajar de 4 a 2 runners activos (`actions-runner/compose.yaml`) para
+      reducir los picos.
+- [ ] Al cerrar la investigacion: quitar la instrumentacion (bloque de arriba) y mover lo aprendido a
+      `actions-runner/README.md`.

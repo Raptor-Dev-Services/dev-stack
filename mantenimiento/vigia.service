@@ -1,0 +1,12 @@
+# Se instala con:
+#   sudo cp mantenimiento/vigia.sh /usr/local/bin/vigia.sh
+#   sudo cp mantenimiento/vigia.service /etc/systemd/system/vigia.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now vigia
+[Unit]
+Description=Vigia de cuelgues
+After=docker.service
+[Service]
+ExecStart=/bin/sh /usr/local/bin/vigia.sh
+Restart=always
+[Install]
+WantedBy=multi-user.target

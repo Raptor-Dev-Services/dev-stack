@@ -12,6 +12,9 @@ Cada carpeta tiene su propio `.env` (obligatorio, se copia de su `.env.example`)
 Del stack hay ademas [`stack/MONITOREO.md`](stack/MONITOREO.md) (Grafana, Prometheus,
 node-exporter) y [`stack/PUERTOS.md`](stack/PUERTOS.md) (el mapa de puertos).
 
+Si el server se cuelga: [`mantenimiento/CUELGUES.md`](mantenimiento/CUELGUES.md) (investigacion
+abierta, instrumentacion instalada y que mirar tras la proxima caida).
+
 ## Si tu clon es de antes de `stack/`
 
 Hasta el 2026-09-30 el stack vivia en la raiz del repo. `git pull` mueve lo versionado, pero **no

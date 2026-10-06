@@ -1,5 +1,10 @@
 # Pendientes del dev-stack
 
+## Cuelgues del server (abierto el 2026-10-06)
+
+Se congela sin dejar log, siempre con CI corriendo; memoria y disco descartados. Todo lo medido, la
+instrumentacion instalada en el server y que hacer tras la proxima caida: [`mantenimiento/CUELGUES.md`](mantenimiento/CUELGUES.md).
+
 ## Limpieza programada de Docker (pedida el 2026-10-05)
 
 **Problema:** los pipelines (webapi, webclient, appmobile) van dejando imágenes, capas y caché de build en el
