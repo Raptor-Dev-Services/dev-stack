@@ -1,6 +1,6 @@
 # Cuelgues del server: investigacion abierta
 
-**Estado al 2026-10-07 ~02:40 UTC: apunta a HARDWARE / firmware, no al kernel ni a la carga.** Dos caidas
+**Estado al 2026-10-07 02:45 UTC: prueba en curso con el APST del NVMe apagado (ver abajo).** Antes se leyo como hardware/firmware; Dos caidas
 nuevas con la instrumentacion puesta: una **en reposo** (load 0.1, 38 °C) y otra con carga media (load 18,
 77 °C); ninguna dejo panic, lockup ni volcado de kdump. Ver "2026-10-07: lo que dijo la instrumentacion".
 
@@ -55,6 +55,33 @@ asi que lo ultimo antes del corte se perdia.
 3. **Actualizar el BIOS** desde el soporte de Lenovo para el tipo `11MR` (el actual es de 2022-03).
 4. **memtest86+** una noche (`sudo apt install memtest86+`, aparece en GRUB) y el diagnostico UEFI de
    Lenovo para RAM y fuente.
+
+## 2026-10-07 02:38 UTC: prueba en curso, APST del NVMe apagado
+
+Lo que el usuario ve en cada caida: **siempre con pipelines corriendo, el LED sigue encendido y al conectar
+un monitor no da video**. La caida "en reposo" del 10-06 11:09 no cuadra con eso y no se uso para decidir.
+
+**Hipotesis principal: el NVMe deja de responder bajo escritura pesada.** Es un Samsung PM961 OEM de 256 GB
+(`MZVLW256HEHP-000L7`, firmware `5L7QCXB7`) con APST encendido (`default_ps_max_latency_us=100000`). Explica
+que nunca quede log: el journal, el vigia y kdump escriben en el mismo disco que se muere.
+
+Agravante encontrado: **el disco estaba al 100%** (93/98 GB; un dia antes, 57%): containerd 51 GB (imagenes
+y cache de build) y `~/ci-runners` 24 GB. El usuario lo libero a 64%. Hasta encender la limpieza diaria
+(`limpiar-docker.sh`, ver TODO.md), se vuelve a llenar.
+
+**Cambio aplicado:** `/etc/default/grub.d/90-nvme-apst.cfg` agrega `nvme_core.default_ps_max_latency_us=0`;
+`update-grub` y reinicio. Verificado tras el arranque: `/proc/cmdline` lo trae y el parametro vale `0`.
+Para revertir: borrar ese archivo, `sudo update-grub` y reiniciar.
+
+**Como se lee:** si pasan varios dias de pipelines sin caida, era el NVMe (y conviene cambiarlo por uno
+nuevo de todas formas). Si vuelve a caer, siguen C-states (`intel_idle.max_cstate=1`), BIOS y memtest,
+**de uno en uno**.
+
+Notas del reinicio: Harbor no vuelve solo (sus contenedores mueren con `failed to initialize logging
+driver: dial tcp 127.0.0.1:1514` porque arrancan antes que `harbor-log`); se levanta con
+`docker compose up -d` en `~/Docker/harbor`. Y `hospital-core-api-staging` sale `unhealthy` porque su
+healthcheck pega a `localhost:8080` y la API escucha en `127.0.0.1:8092`: la API esta bien, el
+healthcheck esta mal (no es de este incidente).
 
 ## Lo que esta descartado, y con que
 
