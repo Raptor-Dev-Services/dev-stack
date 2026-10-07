@@ -193,6 +193,27 @@ es un error: anotar la direccion y el patron. Para volver a Ubuntu, boton de enc
 **Si sale un error:** apagar, quitar un modulo, repetir la prueba con el otro solo y viceversa. El que falle
 se retira; el server sigue con 16 GB y hay que bajar de 4 a 2 runners (los picos de CI ya llegan a 22 GB).
 
+## Que tiene CI que no tienen las pruebas sinteticas
+
+Observacion del dueno (10-07 21:40): **las pruebas sinteticas no lo tiran, los pipelines si.** memtester (47 min
+sobre 28.6 GB, sin errores) y stress-ng (CPU 98% + RAM 95%) no han provocado caida; CI la provoca. Ojo: con
+caidas cada 51 min a 17 h, una hora sin caer todavia no prueba nada.
+
+Lo que un pipeline hace y la prueba sintetica no: crear y destruir contenedores sin parar (`veth`, bridge,
+`netns`, `overlayfs`, cgroups), disco intenso (builds de imagenes, NuGet, Gradle, Testcontainers), red intensa
+(Harbor, NuGet, GitHub; NIC `e1000e`) y carga a rafagas en vez de sostenida. Para aislarlo,
+[`probar-pipelines.sh`](probar-pipelines.sh), **una prueba a la vez**, ~1 h cada una, sin sudo:
+
+| Modo | Que aisla | Si cae solo con este |
+|---|---|---|
+| `contenedores` | redes virtuales + overlayfs + cgroups | kernel/Docker: probar otro kernel antes que hardware |
+| `contenedores-sin` | lo mismo sin red | si este aguanta y el anterior cae: `veth`/bridge |
+| `disco` | NVMe bajo escritura mixta | disco/controlador PCIe |
+| `rafagas` | picos de consumo 0-100% cada 10 s | fuente de poder / VRM |
+| `ci` | relanza CI real de PRs (sin despliegue) | reproduce la caida a voluntad; base para lo demas |
+
+Log en `~/pruebas-cuelgues/<fecha>-<modo>.log`, con `sync` por linea.
+
 ## Lo que esta descartado, y con que
 
 - **Regresion de kernel o de Docker:** el kernel 7.0.0-34, Docker 29.8 y containerd 2.3.6 se instalaron el
