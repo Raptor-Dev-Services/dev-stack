@@ -66,7 +66,8 @@ un monitor no da video**. La caida "en reposo" del 10-06 11:09 no cuadra con eso
 que nunca quede log: el journal, el vigia y kdump escriben en el mismo disco que se muere.
 
 Agravante encontrado: **el disco estaba al 100%** (93/98 GB; un dia antes, 57%): containerd 51 GB (imagenes
-y cache de build) y `~/ci-runners` 24 GB. El usuario lo libero a 64%. Hasta encender la limpieza diaria
+y cache de build) y `~/ci-runners` 24 GB. El usuario lo libero a 64%. Ademas el LV raiz solo tenia 100 GB de un VG de 235: el 2026-10-07 se extendio en caliente
+(`lvextend -r -l +100%FREE`) a **232 GB, 29% usado**. El equipo es un ThinkCentre M90q Gen 2. Hasta encender la limpieza diaria
 (`limpiar-docker.sh`, ver TODO.md), se vuelve a llenar.
 
 **Cambio aplicado:** `/etc/default/grub.d/90-nvme-apst.cfg` agrega `nvme_core.default_ps_max_latency_us=0`;
