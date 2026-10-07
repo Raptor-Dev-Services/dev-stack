@@ -266,6 +266,7 @@ Todo esto vive **en el server, fuera de este repo** salvo el vigia, que esta ver
 | panic ante lockup | `/etc/sysctl.d/99-cuelgues.conf` (`kernel.panic=10`, `softlockup_panic=1`, `hardlockup_panic=1`, `hung_task_panic=1`) | si es el kernel, se reinicia solo y deja el motivo |
 | vigia | [`vigia.sh`](vigia.sh) en `/usr/local/bin/`, [`vigia.service`](vigia.service) habilitado | temp, memoria, presion, carga y contenedores cada 5 s en `/var/log/vigia.log`, con `sync` por linea |
 | `lm-sensors` | paquete | `sensors` |
+| forense de arranque | [`forense-arranque.sh`](forense-arranque.sh) en `/usr/local/bin/`, [`forense-arranque.service`](forense-arranque.service) habilitado | en cada arranque anota en `/var/log/arranques.log` si el anterior termino LIMPIO o en CAIDA, con la ultima lectura del vigia, rastros de kdump/pstore y las ultimas lineas del journal |
 
 El journal ya era persistente (`/var/log/journal` existe; `journalctl --list-boots` muestra arranques viejos).
 

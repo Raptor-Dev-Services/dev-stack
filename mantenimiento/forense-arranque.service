@@ -1,0 +1,11 @@
+[Unit]
+Description=Anota como termino el arranque anterior (limpio o caida)
+After=systemd-journald.service local-fs.target
+Wants=systemd-journald.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /usr/local/bin/forense-arranque.sh
+
+[Install]
+WantedBy=multi-user.target
