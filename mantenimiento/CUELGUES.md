@@ -152,16 +152,46 @@ El vigia ya anota `nvme=` (reinstalado a las 19:42) para cerrar la duda del todo
 - **El menu de GRUB esta oculto** (`GRUB_TIMEOUT_STYLE=hidden`, `GRUB_TIMEOUT=0`): instalar memtest86+ y
   reiniciar NO lo corre, arranca Ubuntu directo. Hay que elegirlo a proposito (ver abajo).
 
-### Como correr la prueba de RAM
+### Como correr la prueba de RAM (los dos metodos)
 
-- **Desde SSH, sin apagar staging (parcial):** `sudo apt install -y memtester` y
-  `sudo memtester 20G 3`. Prueba 20 GB de los 30 con el sistema arriba. No toca la memoria que usa el kernel,
-  asi que un resultado limpio no descarta la RAM del todo; un error si la condena. Si el server cae durante
-  la prueba, tambien es dato.
-- **Completa, con memtest86+ (necesita monitor):** `sudo grub-reboot` con el titulo exacto de la entrada
-  (`sudo grep -E "^menuentry" /boot/grub/grub.cfg | grep -i memtest`) y `sudo reboot`. memtest86+ arranca
-  solo y repite pasadas sin fin; los resultados **solo se ven en pantalla** y no deja nada en disco. Para
-  volver a Ubuntu, reinicio fisico (boton). Staging queda apagado mientras corre.
+Plan acordado: **memtester aqui, por SSH, y memtest86+ en casa, con monitor.** Se corren los dos porque
+cubren cosas distintas.
+
+| | memtester (SSH) | memtest86+ (GRUB, con monitor) |
+|---|---|---|
+| Cubre | lo que el sistema deja libre: ~28 de 30 GB con Docker parado | **los 30 GB**, incluida la que usa el kernel |
+| Staging | apagado mientras corre (se para Docker) | apagado mientras corre |
+| Resultado | en la terminal y en `/var/log/memtester-*.log` | **solo en pantalla**, no deja nada en disco |
+| Un error | condena la RAM | condena la RAM |
+| Limpio | no la absuelve del todo (falta lo del kernel) | la absuelve con buena confianza tras 2+ pasadas |
+
+**1. memtester por SSH** (script versionado: [`probar-ram.sh`](probar-ram.sh)):
+
+```sh
+tmux new -s ram                                   # que sobreviva si se corta el SSH
+cd ~/Proyectos/agents/src/dev-stack
+sudo sh mantenimiento/probar-ram.sh 2             # 2 pasadas; ~1 h por pasada con 28 GB
+```
+
+Para Docker (staging, Harbor, dev-stack y runners), tira la cache, prueba todo lo disponible menos 1.5 GB,
+anota cada linea con `sync` en `/var/log/memtester-<fecha>.log` y al terminar levanta Docker y Harbor otra
+vez. Con `Ctrl+C` tambien vuelve a levantar Docker. Si el server se cae a media prueba, el log dice hasta
+donde llego: tambien es dato. **Probar los 30 GB exactos no se puede desde el sistema en marcha**: el kernel
+y lo minimo para que el SSH siga vivo ocupan ~1.5-2 GB que memtester no puede tocar.
+
+**2. memtest86+ en casa** (con monitor y teclado). El menu de GRUB esta oculto, asi que se elige a mano:
+
+```sh
+sudo grep -E "^menuentry" /boot/grub/grub.cfg | grep -i memtest   # copiar el titulo exacto
+sudo grub-reboot "<titulo exacto>" && sudo reboot                 # solo el SIGUIENTE arranque
+```
+
+O sin SSH: mantener `Shift` (o `Esc`) al encender para que salga el menu. memtest86+ arranca solo y repite
+pasadas sin fin; dejarlo **al menos 2 pasadas completas** (varias horas con 32 GB). Cualquier linea en rojo
+es un error: anotar la direccion y el patron. Para volver a Ubuntu, boton de encendido.
+
+**Si sale un error:** apagar, quitar un modulo, repetir la prueba con el otro solo y viceversa. El que falle
+se retira; el server sigue con 16 GB y hay que bajar de 4 a 2 runners (los picos de CI ya llegan a 22 GB).
 
 ## Lo que esta descartado, y con que
 
