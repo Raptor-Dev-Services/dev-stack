@@ -1,6 +1,6 @@
 # Cuelgues del server: investigacion abierta
 
-**Estado al 2026-10-07 19:45 UTC: con el APST apagado volvio a caer (19:30, ver "19:30: cayo con el APST apagado"). El APST queda descartado, y el SMART de las 19:42 descarta tambien que el NVMe se haya sobrecalentado o tenga errores de medio. Lo que queda es la plataforma: RAM, placa/firmware o fuente.** Antes se leyo como hardware/firmware; Dos caidas
+**Estado al 2026-10-07 20:35 UTC: cayo otra vez a las 20:25 con carga BAJA (5.8), 23 GB libres y sin swap (ver "20:25: cayo con carga baja"). Quedan descartados APST, NVMe, carga y presion de memoria. Lo que queda es la plataforma: RAM primero (sospecha del dueno), luego C-states, BIOS y fuente. memtest86+ instalado, todavia sin correr.** Antes se leyo como hardware/firmware; Dos caidas
 nuevas con la instrumentacion puesta: una **en reposo** (load 0.1, 38 °C) y otra con carga media (load 18,
 77 °C); ninguna dejo panic, lockup ni volcado de kdump. Ver "2026-10-07: lo que dijo la instrumentacion".
 
@@ -127,6 +127,41 @@ El vigia ya anota `nvme=` (reinstalado a las 19:42) para cerrar la duda del todo
    errores. Si los contadores de temperatura no estan en cero, el disco ha estado pasando de su limite.
 3. **Bajar los picos**: de 4 a 2 runners (`actions-runner/compose.yaml`). Es mitigacion y es prueba a la vez.
 4. Si el SMART sale limpio: C-states, BIOS y memtest, como dice la lista de arriba, de uno en uno.
+   **Orden acordado el 10-07 20:30: RAM primero** (ver "20:25: cayo con carga baja"), luego C-states.
+
+## 2026-10-07 20:25 UTC: cayo con carga baja
+
+| Arranque | Termino | Ultima lectura del vigia | Volvio |
+|---|---|---|---|
+| 10-07 19:33 -> 20:25 (**51 min**) | **caida** con una suite de pruebas en contenedor | 20:25:07 · 77 °C · **23.1 GB libres · swap 9 MB · psi 0 · load 5.8** · 47 contenedores · nvme 48/65 | 20:26:23 |
+
+- **Descarta carga y memoria como disparador.** En este mismo arranque, a las 20:00, aguanto **load 75** y 83 °C
+  sin caer (build de Android + suite de F0 + CI juntos); cayo 25 min despues con load 5.8. Junto con la caida
+  en reposo del 10-06 (load 0.1), la carga no es la causa.
+- La CPU venia subiendo de 54 a 77 °C en los 2 min previos (arrancaba una suite con Testcontainers): rampa de
+  consumo, no temperatura alta. Si fuera la fuente bajo un pico de corriente encajaria, pero 77 °C ya se vio
+  muchas veces sin caer.
+- Otra vez nada en el kernel ni en `/var/crash`. El journal termina en 20:25:12 con Docker borrando una red
+  (`veth`, `netns`, overlayfs).
+- **Lo de Docker al final NO es una pista:** casi todos los arranques caidos terminan en una linea de `veth`
+  o `netns`, pero en CI son la mayoria del journal (1,843 de 2,977 lineas en los 10 min previos a esta caida),
+  asi que es lo esperable por frecuencia. Y la caida en reposo del 10-06 termino en otra cosa
+  (`user-1000.slice`).
+- **La frecuencia sube:** 02:11, 19:30 y 20:25 del 10-07; arranques de 17 h y luego de 51 min.
+- El reinicio de las 20:31 fue limpio (`systemd-shutdown`): lo hizo el dueno tras instalar memtest86+.
+- **El menu de GRUB esta oculto** (`GRUB_TIMEOUT_STYLE=hidden`, `GRUB_TIMEOUT=0`): instalar memtest86+ y
+  reiniciar NO lo corre, arranca Ubuntu directo. Hay que elegirlo a proposito (ver abajo).
+
+### Como correr la prueba de RAM
+
+- **Desde SSH, sin apagar staging (parcial):** `sudo apt install -y memtester` y
+  `sudo memtester 20G 3`. Prueba 20 GB de los 30 con el sistema arriba. No toca la memoria que usa el kernel,
+  asi que un resultado limpio no descarta la RAM del todo; un error si la condena. Si el server cae durante
+  la prueba, tambien es dato.
+- **Completa, con memtest86+ (necesita monitor):** `sudo grub-reboot` con el titulo exacto de la entrada
+  (`sudo grep -E "^menuentry" /boot/grub/grub.cfg | grep -i memtest`) y `sudo reboot`. memtest86+ arranca
+  solo y repite pasadas sin fin; los resultados **solo se ven en pantalla** y no deja nada en disco. Para
+  volver a Ubuntu, reinicio fisico (boton). Staging queda apagado mientras corre.
 
 ## Lo que esta descartado, y con que
 
