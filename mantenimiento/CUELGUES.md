@@ -1,6 +1,6 @@
 # Cuelgues del server: investigacion abierta
 
-**Estado al 2026-10-07 02:45 UTC: prueba en curso con el APST del NVMe apagado (ver abajo).** Antes se leyo como hardware/firmware; Dos caidas
+**Estado al 2026-10-07 19:45 UTC: con el APST apagado volvio a caer (19:30, ver "19:30: cayo con el APST apagado"). El APST queda descartado; el NVMe como disco, no.** Antes se leyo como hardware/firmware; Dos caidas
 nuevas con la instrumentacion puesta: una **en reposo** (load 0.1, 38 °C) y otra con carga media (load 18,
 77 °C); ninguna dejo panic, lockup ni volcado de kdump. Ver "2026-10-07: lo que dijo la instrumentacion".
 
@@ -83,6 +83,38 @@ driver: dial tcp 127.0.0.1:1514` porque arrancan antes que `harbor-log`); se lev
 `docker compose up -d` en `~/Docker/harbor`. Y `hospital-core-api-staging` sale `unhealthy` porque su
 healthcheck pega a `localhost:8080` y la API escucha en `127.0.0.1:8092`: la API esta bien, el
 healthcheck esta mal (no es de este incidente).
+
+## 2026-10-07 19:30 UTC: cayo con el APST apagado
+
+| Arranque | Termino | Ultima lectura del vigia | Volvio |
+|---|---|---|---|
+| 10-07 02:39 -> 19:30 (~17 h) | **caida con CI** | 19:30:17 · 78 °C · 10.4 GB libres · swap 2.9 GB · load 30 · 42 contenedores | 19:33:51 |
+
+- **El APST no era**: `/proc/cmdline` traia `nvme_core.default_ps_max_latency_us=0` y el parametro valia `0`.
+  17 h de vida no prueban nada (antes hubo arranques de 24 h).
+- Otra vez **nada en el kernel**: ni panic, ni lockup, ni hung_task, ni errores de NVMe/PCIe/AER, ni MCE;
+  `/var/crash` y `pstore` vacios. El journal acaba en 19:30:14 en medio de Docker creando contenedores.
+- **Primera caida con presion de memoria**: carga 30-58 sostenida desde ~18:47, swap 2.9 GB, `psi_mem` 22.6 a
+  las 19:29:54. No es OOM (quedaban 8-12 GB libres), pero es la carga mas pesada que se ha visto al caer.
+  El vigia ya iba lento al final: lineas cada 7-17 s en vez de 5 s, porque el `sync` por linea esperaba al disco.
+- En vuelo: un `Android release` de `sociofit-appmobile` (Gradle, desde 19:15) y dos `Pipeline` de
+  `sociofit-webapi` tras una rafaga de 6. **El Android release solo no es la causa**: hubo cinco antes sin
+  caida (10-06 02:41, 13:55, 19:20; 10-07 02:59, 04:35).
+- Temperatura de CPU normal (78-79 °C, pico del arranque 85 °C a las 02:46 sin caer).
+- **El NVMe se calienta solo**: en reposo, 3 min despues de arrancar, el sensor 2 marca **60 °C** con
+  `max` 68.85 / `crit` 71.85 en el Composite. Bajo 45 min de escritura de CI pudo llegar a su limite, y eso
+  no lo media nadie. **Desde este commit el vigia anota `nvme=<composite>/<sensor2>` al final de la linea.**
+- Entre tanto, unattended-upgrades instalo el kernel **7.0.0-38** (10-07 06:01); este arranque es el
+  primero con el. Una variable mas: si deja de caerse, no se sabra si fue el kernel.
+
+### Siguientes pasos
+
+1. **Reinstalar el vigia** para que mida el NVMe: `sudo cp mantenimiento/vigia.sh /usr/local/bin/ && sudo systemctl restart vigia`.
+2. **SMART del NVMe** (necesita sudo): `sudo smartctl -a /dev/nvme0`. Mirar `Warning/Critical Comp.
+   Temperature Time`, `Media and Data Integrity Errors`, `Unsafe Shutdowns`, `Percentage Used` y el log de
+   errores. Si los contadores de temperatura no estan en cero, el disco ha estado pasando de su limite.
+3. **Bajar los picos**: de 4 a 2 runners (`actions-runner/compose.yaml`). Es mitigacion y es prueba a la vez.
+4. Si el SMART sale limpio: C-states, BIOS y memtest, como dice la lista de arriba, de uno en uno.
 
 ## Lo que esta descartado, y con que
 
