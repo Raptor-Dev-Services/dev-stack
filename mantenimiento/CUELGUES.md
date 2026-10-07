@@ -1,8 +1,11 @@
 # Cuelgues del server: investigacion abierta
 
-**Estado al 2026-10-06 ~02:00 UTC: sin causa confirmada.** El server queda instrumentado para que la
-proxima caida deje rastro. Lo que sigue es lo medido, lo descartado y que hacer cuando vuelva a pasar.
+**Estado al 2026-10-07 ~02:40 UTC: apunta a HARDWARE / firmware, no al kernel ni a la carga.** Dos caidas
+nuevas con la instrumentacion puesta: una **en reposo** (load 0.1, 38 °C) y otra con carga media (load 18,
+77 °C); ninguna dejo panic, lockup ni volcado de kdump. Ver "2026-10-07: lo que dijo la instrumentacion".
 
+Equipo: Lenovo ThinkCentre `11MRS09W00` (placa `31A5`), Intel Core i5-11500, BIOS `M3JKT2FA` del
+**2022-03-11**.
 ## El sintoma
 
 El server (Ubuntu, kernel 7.0.0-34, i5 de 6 nucleos / 12 hilos, 30 GB de RAM, NVMe) **se congela sin
@@ -24,6 +27,34 @@ lineas de apagado, y al arrancar ext4 hace `orphan cleanup on readonly fs` y jou
 Horas en UTC. Las ultimas lineas de cada arranque caido son de Docker desmontando un contenedor (veth,
 overlayfs, buildkit), pero eso **no prueba nada**: hasta el 2026-10-06 journald escribia a disco cada 5 min,
 asi que lo ultimo antes del corte se perdia.
+
+## 2026-10-07: lo que dijo la instrumentacion
+
+| Arranque | Termino | Ultima lectura del vigia | Volvio |
+|---|---|---|---|
+| 10-06 01:33 -> 11:0x | **caida en reposo** | 11:09:28 · 39 °C · 27.4 GB libres · load 0.10 · 37 contenedores | 11:10:27 (~1 min) |
+| 10-06 11:10 -> 10-07 02:11 | **caida con CI** (rafaga de SocioRent) | 02:11:22 · 77 °C · 24.3 GB libres · load 18 · 40 contenedores | 02:27:31 (a mano) |
+
+- El journal y el vigia se cortan **en el mismo segundo** (02:11:22): muerte instantanea, sin degradacion
+  previa. Nada en el kernel: ni panic, ni soft/hard lockup, ni hung_task, ni MCE, ni NVMe.
+- **kdump esta activo** (`kdump-tools` active, 512 MB reservados) y `/var/crash` solo tiene `kdump_lock`:
+  no hubo kernel panic, porque un panic con kdump deja volcado. Con `nmi_watchdog=1` y
+  `hardlockup_panic=1`, un CPU atorado tambien habria entrado en panic. **El kernel no se entero.**
+- La caida en reposo **descarta carga y temperatura como causa**; la correlacion con CI era porque CI corre
+  casi todo el dia. Pico de temperatura del 10-07: 85 °C a las 01:37, 34 min antes de caer, y sin caer.
+- Lo que queda: **plataforma** (fuente de poder, RAM, placa) o **firmware/estados de reposo del CPU**
+  (`intel_idle`, C-states hasta C3_ACPI; hay reportes de congelamientos de Rocket Lake en reposo profundo),
+  agravado por un BIOS de 2022.
+
+### Siguientes pasos, en orden (baratos y reversibles primero)
+
+1. **Ver el aparato en la proxima caida:** apagado (fuente) o prendido y congelado (CPU/firmware/RAM).
+   La caida en reposo volvio en ~1 min: si nadie lo reinicio, fue un reset de hardware.
+2. **Limitar los C-states** como prueba: `intel_idle.max_cstate=1` en `GRUB_CMDLINE_LINUX_DEFAULT`
+   (`/etc/default/grub`, `sudo update-grub`, reiniciar). Si deja de caerse por varios dias, era eso.
+3. **Actualizar el BIOS** desde el soporte de Lenovo para el tipo `11MR` (el actual es de 2022-03).
+4. **memtest86+** una noche (`sudo apt install memtest86+`, aparece en GRUB) y el diagnostico UEFI de
+   Lenovo para RAM y fuente.
 
 ## Lo que esta descartado, y con que
 
