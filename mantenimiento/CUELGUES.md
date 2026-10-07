@@ -1,6 +1,6 @@
 # Cuelgues del server: investigacion abierta
 
-**Estado al 2026-10-07 19:45 UTC: con el APST apagado volvio a caer (19:30, ver "19:30: cayo con el APST apagado"). El APST queda descartado; el NVMe como disco, no.** Antes se leyo como hardware/firmware; Dos caidas
+**Estado al 2026-10-07 19:45 UTC: con el APST apagado volvio a caer (19:30, ver "19:30: cayo con el APST apagado"). El APST queda descartado, y el SMART de las 19:42 descarta tambien que el NVMe se haya sobrecalentado o tenga errores de medio. Lo que queda es la plataforma: RAM, placa/firmware o fuente.** Antes se leyo como hardware/firmware; Dos caidas
 nuevas con la instrumentacion puesta: una **en reposo** (load 0.1, 38 °C) y otra con carga media (load 18,
 77 °C); ninguna dejo panic, lockup ni volcado de kdump. Ver "2026-10-07: lo que dijo la instrumentacion".
 
@@ -107,10 +107,22 @@ healthcheck esta mal (no es de este incidente).
 - Entre tanto, unattended-upgrades instalo el kernel **7.0.0-38** (10-07 06:01); este arranque es el
   primero con el. Una variable mas: si deja de caerse, no se sabra si fue el kernel.
 
+
+### 19:42: SMART del NVMe, limpio
+
+`sudo smartctl -a /dev/nvme0`: `PASSED`, `Critical Warning 0x00`, **`Warning/Critical Comp. Temperature Time`
+en 0** (el disco nunca ha pasado de 69 °C en toda su vida), **`Media and Data Integrity Errors` 0**, spare 100%,
+11% usado, 47 264 horas encendido (~5.4 años), 80 `Unsafe Shutdowns` (incluye estas caidas). Las 4 078
+entradas del log de errores son `Invalid Field in Command` / `Invalid Namespace or Format`: comandos que el
+host manda y el disco no soporta (sondeos de smartctl y del driver), no fallas de lectura o escritura.
+
+**Conclusion: el NVMe no es.** Ni APST, ni temperatura, ni desgaste. Siguen RAM (memtest86+), BIOS y C-states.
+El vigia ya anota `nvme=` (reinstalado a las 19:42) para cerrar la duda del todo en la proxima caida.
+
 ### Siguientes pasos
 
-1. **Reinstalar el vigia** para que mida el NVMe: `sudo cp mantenimiento/vigia.sh /usr/local/bin/ && sudo systemctl restart vigia`.
-2. **SMART del NVMe** (necesita sudo): `sudo smartctl -a /dev/nvme0`. Mirar `Warning/Critical Comp.
+1. ~~Reinstalar el vigia~~ (hecho 19:42). **Reinstalar el vigia** para que mida el NVMe: `sudo cp mantenimiento/vigia.sh /usr/local/bin/ && sudo systemctl restart vigia`.
+2. ~~SMART del NVMe~~ (hecho, limpio). **SMART del NVMe** (necesita sudo): `sudo smartctl -a /dev/nvme0`. Mirar `Warning/Critical Comp.
    Temperature Time`, `Media and Data Integrity Errors`, `Unsafe Shutdowns`, `Percentage Used` y el log de
    errores. Si los contadores de temperatura no estan en cero, el disco ha estado pasando de su limite.
 3. **Bajar los picos**: de 4 a 2 runners (`actions-runner/compose.yaml`). Es mitigacion y es prueba a la vez.
