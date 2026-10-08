@@ -24,3 +24,7 @@ actions-runner/.env
 /minio.license
 /data/
 /dashy/productos.yml
+
+# --- raspberry-kuma/ ---------------------------------------------------------
+# Base de datos de Uptime Kuma en la Pi.
+raspberry-kuma/data/

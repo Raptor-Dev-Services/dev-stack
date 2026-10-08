@@ -1,0 +1,45 @@
+# =============================================================================
+# raspberry-kuma/compose.yaml - Uptime Kuma solo, para monitorear los equipos desde una Raspberry Pi 4
+# =============================================================================
+# Independiente del resto de dev-stack: se copia esta carpeta a la Pi y se levanta desde ahi.
+#
+#     docker compose up -d        # primer arranque: abrir http://<ip-de-la-pi>:3001 y crear el admin
+#     docker compose logs -f      # ver que arranco bien
+#     docker compose pull && docker compose up -d   # actualizar (despues de cambiar el tag)
+#     docker compose down         # bajarlo; los datos quedan en ./data
+#
+# Requisitos en la Pi: Raspberry Pi OS de 64 bits (arm64) y Docker con el plugin de compose
+# (`curl -fsSL https://get.docker.com | sh`). La imagen es multi-arquitectura, no hace falta nada especial.
+#
+# Notas para la Pi:
+#   - Los datos (SQLite, config, certificados) viven en ./data. Respaldarla = copiar esa carpeta con
+#     el contenedor detenido. Si puedes, pon la Pi a arrancar desde SSD: la microSD sufre con las
+#     escrituras constantes de los heartbeats.
+#   - Logs de Docker acotados (3 x 10 MB) por la misma razon.
+#   - Ping funciona desde la red bridge (Docker da NET_RAW por defecto). Para monitorear algo que
+#     corre en la propia Pi usa host.docker.internal.
+#   - Ojo con el bloque de "Docker Container" de Kuma: no montes /var/run/docker.sock aqui; si algun
+#     dia lo necesitas, usa un docker-socket-proxy de solo lectura (ver stack/compose-dev.yaml).
+# =============================================================================
+
+name: kuma
+
+services:
+  uptime-kuma:
+    image: louislam/uptime-kuma:2.5.5
+    container_name: uptime-kuma
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      TZ: ${TZ:-America/Mexico_City}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # El healthcheck lo trae la imagen.
