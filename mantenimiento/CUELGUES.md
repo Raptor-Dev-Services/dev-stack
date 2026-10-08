@@ -1,6 +1,6 @@
 # Cuelgues del server: investigacion abierta
 
-**Estado al 2026-10-07 20:35 UTC: cayo otra vez a las 20:25 con carga BAJA (5.8), 23 GB libres y sin swap (ver "20:25: cayo con carga baja"). Quedan descartados APST, NVMe, carga y presion de memoria. Lo que queda es la plataforma: RAM primero (sospecha del dueno), luego C-states, BIOS y fuente. memtest86+ instalado, todavia sin correr.** Antes se leyo como hardware/firmware; Dos caidas
+**Estado al 2026-10-08 05:45 UTC: cayo con la RAM NUEVA a las 04:10 (ver "04:10: cayo con la RAM nueva"). Descartados: APST, NVMe, carga, memoria y RAM. El NMI watchdog esta activo y no dispara: el procesador entero se detiene. Lo que queda es plataforma: C-states/firmware, alimentacion (eliminador/VRM) o placa.** Antes se leyo como hardware/firmware; Dos caidas
 nuevas con la instrumentacion puesta: una **en reposo** (load 0.1, 38 °C) y otra con carga media (load 18,
 77 °C); ninguna dejo panic, lockup ni volcado de kdump. Ver "2026-10-07: lo que dijo la instrumentacion".
 
@@ -222,6 +222,33 @@ nueva".** Sin otros cambios a la vez (ni C-states, ni kernel, ni BIOS), para que
 
 Tras el arranque se soltaron otra vez los agentes de alineacion de staging (CI + despliegues), o sea la carga
 de siempre.
+
+## 2026-10-08 04:10 UTC: cayo con la RAM nueva. La RAM queda DESCARTADA
+
+| Arranque | Termino | Ultima lectura del vigia | Volvio |
+|---|---|---|---|
+| 10-08 01:25 -> 04:10 (**2 h 45 min**, RAM nueva) | **CAIDA** | 04:10:24 · 77 °C · 24.5 GB libres · swap 287 MB · psi 0 · load 17 (33 en 5 min) · 47 contenedores · nvme 49/65 | 05:42 (a mano) |
+
+- **La RAM no era**: modulos nuevos y cayo igual, con 24 GB libres. Antes ya se habia descartado el NVMe
+  (APST y SMART), la carga (cayo con load 0.1 y con 5.8, aguanto 75) y la memoria (nunca falto).
+- **El detector de bloqueos SI esta activo** (`NMI watchdog: Enabled` en el arranque, `nmi_watchdog=1`,
+  `hardlockup_panic=1`, umbral 10 s) y otra vez no disparo: no hay panic, ni kdump, ni pstore. Un kernel
+  trabado con interrupciones apagadas lo atraparia el NMI. Que ni el NMI alcance a actuar apunta a que **el
+  procesador entero deja de ejecutar**: plataforma (placa, VRM, fuente/eliminador, firmware o C-states), no
+  software.
+- El journal acaba, otra vez, en el ciclo de vida de un contenedor (shim desconectado, `veth` que se
+  desregistra, `overlayfs` que se desmonta). Seis de seis caidas con CI terminan en ese tipo de evento.
+  Compatible con dos lecturas: (a) es solo lo mas frecuente del journal, o (b) el arranque/parada de
+  contenedores provoca un pico de consumo que la alimentacion no aguanta.
+
+### Siguientes pasos, de uno en uno
+
+1. **C-states** (`intel_idle.max_cstate=1`): barato, reversible, y explica tambien la caida en reposo.
+2. **Aislar con [`probar-pipelines.sh`](probar-pipelines.sh)** sin CI: `rafagas` (picos de consumo) contra
+   `contenedores` (ciclo de contenedores). El que lo tire dice si es alimentacion o el ciclo de contenedores.
+3. **Eliminador de corriente** (el M90q usa un adaptador externo): cambiarlo por uno nuevo de la misma
+   potencia es barato y descarta la fuente.
+4. **BIOS** (el actual es de 2022-03).
 
 ## Que tiene CI que no tienen las pruebas sinteticas
 
