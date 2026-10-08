@@ -261,6 +261,12 @@ de siempre.
 - **Desde este arranque, cualquier caida se compara contra "BIOS nuevo".** Sin otros cambios a la vez:
   C-states siguen sin tocar.
 
+## 2026-10-08 07:08 UTC: corte de corriente provocado por el dueno (NO cuenta)
+
+`/var/log/arranques.log` lo marca como CAIDA (arranque 06:32 -> 07:08:31, 36 min con el BIOS 1.71), pero fue
+el dueno desconectando el equipo por error. No cuenta como caida del problema: el contador del BIOS nuevo
+sigue sin caidas propias.
+
 ## Que tiene CI que no tienen las pruebas sinteticas
 
 Observacion del dueno (10-07 21:40): **las pruebas sinteticas no lo tiran, los pipelines si.** memtester (47 min
