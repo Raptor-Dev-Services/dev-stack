@@ -272,6 +272,17 @@ de siempre.
 el dueno desconectando el equipo por error. No cuenta como caida del problema: el contador del BIOS nuevo
 sigue sin caidas propias.
 
+## Testimonio del dueno (2026-10-08): pasaba desde el dia 1
+
+Antes de que existiera la instrumentacion, el server ya se congelaba **desde el primer dia con Linux**,
+incluso **a los ~15 minutos de arrancar**. La tabla de arranques de arriba (con 2.5 dias estable al
+principio) solo cubre lo que quedo en el journal; no contradice esto, porque los arranques de esos dias no se
+monitorearon. Lectura: el defecto es del equipo desde el inicio (firmware/plataforma), no algo que aparecio
+con la carga de CI ni con un cambio de software posterior. Encaja con un BIOS de 2022 en un kernel 7.0.
+
+Primeras horas con el BIOS 1.71 (desde 07:09 UTC del 10-08): 17 corridas de CI en 38 min, hasta 11 a la vez,
+carga pico 62.9, 63 contenedores, 82 °C, sin caer. Antes caia con carga de 5.8 a 30.
+
 ## Que tiene CI que no tienen las pruebas sinteticas
 
 Observacion del dueno (10-07 21:40): **las pruebas sinteticas no lo tiran, los pipelines si.** memtester (47 min
