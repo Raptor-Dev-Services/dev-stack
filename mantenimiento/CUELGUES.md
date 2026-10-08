@@ -193,6 +193,23 @@ es un error: anotar la direccion y el patron. Para volver a Ubuntu, boton de enc
 **Si sale un error:** apagar, quitar un modulo, repetir la prueba con el otro solo y viceversa. El que falle
 se retira; el server sigue con 16 GB y hay que bajar de 4 a 2 runners (los picos de CI ya llegan a 22 GB).
 
+## 2026-10-08 00:02 UTC: cayo tras 3.5 h de CI pesado
+
+Primera caida registrada sola por [`forense-arranque`](forense-arranque.sh) (`/var/log/arranques.log`).
+
+| Arranque | Termino | Ultima lectura del vigia | Volvio |
+|---|---|---|---|
+| 10-07 20:31 -> 10-08 00:02 (**3 h 31 min**) | **CAIDA** | 00:02:24 · 76 °C · **20.9 GB libres** · swap 1.2 GB · psi 0 · **load 27** · 42 contenedores · nvme 49/65 | 01:01 (a mano, ~1 h despues) |
+| 10-08 01:01 -> 01:02 (52 s) | corte de corriente **provocado por el dueno**; no cuenta | 01:02:05 · load 28 (arranque) | 01:03 |
+
+- Es el arranque mas largo de la tarde y el de **mas carga sostenida**: CI de 6 repos a la vez (migracion a runners
+  propios y alineacion de staging de 5 productos), load 22-50 y picos de 88 °C durante horas, sin caer. Cayo con
+  load 27, 76 °C y 21 GB libres: otra vez nada excepcional en el instante.
+- Otra vez sin rastro del kernel (kdump y pstore vacios), con el detector de bloqueos activo.
+- El journal termina, otra vez, con Docker creando la red de un contenedor (`veth`, `sbJoin`). Con CI es lo
+  esperable por frecuencia (ver "20:25"), pero ya son **todas las caidas con CI** en la misma clase de evento.
+- Sin cambios de hardware ni de configuracion desde las 20:25 (ni C-states, ni RAM): la RAM nueva no se ha puesto.
+
 ## Que tiene CI que no tienen las pruebas sinteticas
 
 Observacion del dueno (10-07 21:40): **las pruebas sinteticas no lo tiran, los pipelines si.** memtester (47 min
