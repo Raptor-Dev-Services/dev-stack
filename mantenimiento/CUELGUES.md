@@ -258,6 +258,11 @@ de siempre.
 - Respaldo previo del chip SPI completo (32 MiB, SHA-256 `4e83f5d5...a495991b7852b855`) en el SSD externo.
   Procedimiento completo, incluido por que la primera cápsula no se aplicó (`OsIndications` en 0) y el
   arreglo (`DisableCapsuleUpdateOnDisk=true`): `~/pasos-actualizar-bios.md` en el server.
+- **Ojo con el microcodigo: el BIOS nuevo NO cambio el que ejecuta el CPU.** Con el BIOS 1.47 el firmware
+  cargaba `0x50` y Linux lo subia temprano a `0x65` (`microcode: Updated early from: 0x00000050`, paquete
+  `intel-microcode 3.20260210`); con el 1.71 el firmware ya trae `0x65`. El microcodigo efectivo fue `0x65`
+  antes y despues, asi que si deja de caerse, la causa no fue el microcodigo sino otra parte del firmware
+  (manejo de energia, C-states, inicializacion de la plataforma), lo que refuerza la hipotesis de C-states.
 - **Desde este arranque, cualquier caida se compara contra "BIOS nuevo".** Sin otros cambios a la vez:
   C-states siguen sin tocar.
 
