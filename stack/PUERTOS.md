@@ -71,16 +71,31 @@ reserva, choca.
 
 | Puerto | Quien | Contenedor |
 |---|---|---|
-| `8080` | C-MSA API | `cmsa-api-staging` *(solo EXPOSE, no publicado)* |
-| `8081` | **SocioFit API** | `sociofit-api-staging` **(host mode: NO sale en `docker ps`)** |
+| `8081` | **SocioFit API** | `sociofit-api-staging` **(host mode)** |
 | `8082` | SocioFit panel | `sociofit-web-staging` |
-| `8083` | **SocioRent API** | `sociorent-api-staging` **(host mode: NO sale en `docker ps`)** |
-| `8084` | C-MSA panel | `cmsa-front-staging` |
-| `8085` | **SocioRent panel** | `sociorent-web-staging` |
+| `8083` | **SocioRent API** | `sociorent-api-staging` **(host mode)** |
+| `8084` | C-MSA panel (proxy de `/api` a la API) | `cmsa-front-staging` **(host mode)** |
+| `8085` | SocioRent panel | `sociorent-web-staging` |
 | `8086` | Pagina de Raptor | `raptor-page` |
 | `8088` | Harbor | `nginx` (puerta local) |
+| `8092` | **hospital-core API** (`127.0.0.1`) | `hospital-core-api-staging` **(host mode)** |
+| `8093` | hospital-core panel (proxy a la API) | `hospital-core-front-staging` **(host mode)** |
+| `8094` | Zeit panel (`127.0.0.1`) | `zeit-staging-web` |
+| `8095` | **Zeit API** (`127.0.0.1`) | `zeit-staging-api` **(host mode)** |
+| `8096` | **SocioPOS API** | `sociopos-api-staging` **(host mode)** |
+| `8097` | SocioPOS panel | `sociopos-web-staging` |
+| `8098` | **C-MSA API** (`127.0.0.1`, sale por el panel) | `cmsa-api-staging` **(host mode)** |
 
-**Libres hoy:** `8087`, `8089`, y el rango `8090`-`8099`.
+**El `8080` queda libre a proposito y NO se debe usar:** la imagen de hospital-core trae una sonda vieja
+a `localhost:8080` (el compose ya la sobreescribe, pero si alguien levanta la imagen sin el compose, le
+pegaria a lo que escuche ahi y saldria "healthy" en falso).
+
+**Libres hoy:** `8087`, `8089`, `8090`, `8091` y `8099`.
+
+Todas las APIs hablan con el dev-stack por `127.0.0.1` (Postgres 5432 con un rol `<producto>_app` sin
+DDL, Redis 6379, MinIO 9000, Mailpit 1025) y mandan sus logs a Seq (`127.0.0.1:5341`) con su propiedad
+`Application`: `SocioFit.Api`, `SocioRent.Api`, `SocioPOS.Api`, `CMSA.Api`, `HospitalCore.Api`,
+`Zeit.Api`. Sus secretos viven en `~/<producto>-staging/<componente>/.env.staging`.
 
 ### La trampa: `docker ps` NO muestra todos los puertos ocupados
 
@@ -132,8 +147,22 @@ De **un solo nivel**: el certificado gratuito cubre `*.raptorcloud.dev`, no `pro
 | `sociofit-app.raptorcloud.dev` | `localhost:8082` |
 | `sociorent-api.raptorcloud.dev` | `localhost:8083` |
 | `sociorent-app.raptorcloud.dev` | `localhost:8085` |
-| `files.raptorcloud.dev` | `localhost:9000` (MinIO, compartido por todos) |
-| `harbor.raptorcloud.dev` | Harbor |
+| `sociopos-api.raptorcloud.dev` | `localhost:8096` |
+| `sociopos-app.raptorcloud.dev` | `localhost:8097` |
+| `cmsa.raptorcloud.dev` | `localhost:8084` (panel; la API sale por su `/api`) |
+| `hospital-app.raptorcloud.dev` | `localhost:8093` (panel; la API sale por su proxy) |
+| `zeit-app.raptorcloud.dev` | `localhost:8094` |
+| `zeit-api.raptorcloud.dev` | **PENDIENTE de crear** en Cloudflare -> `127.0.0.1:8095`. Sin el, el panel de Zeit abre pero no llega a su API |
+| `raptorcloud.dev` | `localhost:8086` (pagina de Raptor) |
+| `files.raptorcloud.dev` | `127.0.0.1:9000` (MinIO, compartido por todos) |
+| `harbor.raptorcloud.dev` | `localhost:8088` (Harbor) |
+| `seq`, `grafana`, `prometheus`, `kuma`, `minio`, `dashy`, `mailpit` `.raptorcloud.dev` | infraestructura (ver el parrafo de arriba) |
+
+Comprobado contra la configuracion viva del tunel (`curl 127.0.0.1:20241/config`) el 2026-10-08.
+
+> Las APIs de hospital-core, C-MSA y Zeit atan a `127.0.0.1` (no a `+` ni `localhost`): asi no quedan
+> abiertas en la LAN sin pasar por el tunel. Si un hostname nuevo apunta a una de ellas, ponlo como
+> `127.0.0.1:<puerto>` y no `localhost:<puerto>`, para que el tunel no intente primero `[::1]`.
 
 
 ## Puertos que NO se pueden usar en macOS
