@@ -250,6 +250,17 @@ de siempre.
    potencia es barato y descarta la fuente.
 4. **BIOS** (el actual es de 2022-03).
 
+## 2026-10-08 06:32 UTC: BIOS nuevo (1.47 -> 1.71)
+
+- BIOS `M3JKT2FA` (1.47, 2022-03-11) -> **`M3JKT47A` (1.71, 2026-07-16)**, con fwupd desde Linux. Acumula el
+  microcodigo de la 1.60 y la mejora de compatibilidad NVMe de la 1.65. Microcodigo cargado tras el
+  arranque: `0x65`.
+- Respaldo previo del chip SPI completo (32 MiB, SHA-256 `4e83f5d5...a495991b7852b855`) en el SSD externo.
+  Procedimiento completo, incluido por que la primera cápsula no se aplicó (`OsIndications` en 0) y el
+  arreglo (`DisableCapsuleUpdateOnDisk=true`): `~/pasos-actualizar-bios.md` en el server.
+- **Desde este arranque, cualquier caida se compara contra "BIOS nuevo".** Sin otros cambios a la vez:
+  C-states siguen sin tocar.
+
 ## Que tiene CI que no tienen las pruebas sinteticas
 
 Observacion del dueno (10-07 21:40): **las pruebas sinteticas no lo tiran, los pipelines si.** memtester (47 min
