@@ -283,6 +283,31 @@ con la carga de CI ni con un cambio de software posterior. Encaja con un BIOS de
 Primeras horas con el BIOS 1.71 (desde 07:09 UTC del 10-08): 17 corridas de CI en 38 min, hasta 11 a la vez,
 carga pico 62.9, 63 contenedores, 82 °C, sin caer. Antes caia con carga de 5.8 a 30.
 
+## 2026-10-08 18:30 UTC: 11 h 14 min con el BIOS 1.71, sin caer
+
+Balance del arranque de las 07:09 (vigia, 7160 lecturas):
+
+| | Valor |
+|---|---|
+| Uptime | 11 h 14 min, el mas largo desde que hay instrumentacion bajo CI real |
+| Corridas de CI | 33 en los repos de producto |
+| Carga | pico **83.8** (08:xx), promedio 3.8; dos rachas pesadas: 07-09 h (prom 24-27) y 15-18 h (picos 54) |
+| Temperatura | pico 86 °C, promedio 46 °C |
+| Memoria | disponible minima 6.7 GB; **swap lleno (7.3 de 8 GB) desde las 07:57** por la rafaga de CI y no se vacia solo (Linux no regresa paginas que nadie toca); hoy 20 GB disponibles, `psi_mem` 0 |
+| Kernel | 0 OOM, 0 MCE, 0 lockups |
+
+**Hallazgo nuevo: tormenta de la interrupcion ACPI `GPE 0x24`, solo con el BIOS 1.71.** El kernel registra
+`ACPI Error: AE_AML_LOOP_TIMEOUT, while evaluating GPE method [_L24]` (metodo `\OBDY` del firmware): **0** en
+los arranques con el 1.47, 18 en el arranque de prueba de 06:32 y 54 en este. Salen por rachas que coinciden
+con la carga alta (07:18-09:00, 16:47, 17:14) y temperaturas de 75-81 °C, lo que apunta a un metodo termico o
+del controlador embebido. `/sys/firmware/acpi/interrupts/gpe24` llevaba **9.8 millones** en 11 h (unas 1950/s
+en las rachas) y un `kworker/0:0+kacpid` ha consumido 25 min de CPU en 3 h (~15 % de un nucleo).
+
+Lectura: es un defecto de AML del BIOS nuevo, molesto pero hoy inocuo (el server no cae y solo cuesta un poco
+de CPU). **No se toca mientras se valida el BIOS** (un cambio a la vez). Si mas adelante estorba, la
+mitigacion es enmascararla: en caliente `echo disable | sudo tee /sys/firmware/acpi/interrupts/gpe24`, o
+permanente con `acpi_mask_gpe=0x24` en GRUB; antes, confirmar que no sea la que avisa de temperatura.
+
 ## Que tiene CI que no tienen las pruebas sinteticas
 
 Observacion del dueno (10-07 21:40): **las pruebas sinteticas no lo tiran, los pipelines si.** memtester (47 min
