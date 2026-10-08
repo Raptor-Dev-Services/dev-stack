@@ -210,6 +210,19 @@ Primera caida registrada sola por [`forense-arranque`](forense-arranque.sh) (`/v
   esperable por frecuencia (ver "20:25"), pero ya son **todas las caidas con CI** en la misma clase de evento.
 - Sin cambios de hardware ni de configuracion desde las 20:25 (ni C-states, ni RAM): la RAM nueva no se ha puesto.
 
+## 2026-10-08 01:19 UTC: RAM nueva
+
+El dueno apago limpio (01:19:41, `systemd-shutdown`), cambio los dos modulos y arranco a las ~01:25. El sistema ve
+30 GB (`free -g`), igual capacidad que antes. **Desde este arranque, cualquier caida se compara contra "RAM
+nueva".** Sin otros cambios a la vez (ni C-states, ni kernel, ni BIOS), para que el resultado sea leible:
+
+- si aguanta un dia o mas con CI encima (antes: 51 min a 3.5 h con CI), era la RAM;
+- si vuelve a caer, la RAM queda descartada y sigue la hipotesis de la red de Docker
+  ([`probar-pipelines.sh contenedores`](probar-pipelines.sh) contra `contenedores-sin`).
+
+Tras el arranque se soltaron otra vez los agentes de alineacion de staging (CI + despliegues), o sea la carga
+de siempre.
+
 ## Que tiene CI que no tienen las pruebas sinteticas
 
 Observacion del dueno (10-07 21:40): **las pruebas sinteticas no lo tiran, los pipelines si.** memtester (47 min
