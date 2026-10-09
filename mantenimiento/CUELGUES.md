@@ -440,3 +440,25 @@ Como leerlo:
       reducir los picos.
 - [ ] Al cerrar la investigacion: quitar la instrumentacion (bloque de arriba) y mover lo aprendido a
       `actions-runner/README.md`.
+
+## 2026-10-09 12:24 UTC: 29 h arriba con el BIOS 1.71, sin caidas
+
+Arranque del 2026-10-08 07:09:24, sin ninguna CAIDA nueva en `/var/log/arranques.log`. Vigia: 19,659 lecturas.
+
+| | Antes (BIOS 1.47) | Con BIOS 1.71 |
+|---|---|---|
+| Lo mas que aguanto con CI | 2.5 a 3.5 h (a veces 15 min) | **29 h 14 min, sigue arriba** |
+| Carga con la que caia | 5.8 a 30 | pico **83.8**, p95 11.2; 0.8 h por encima de 20 |
+| Contenedores | - | pico 65 |
+| Temperatura | - | max 87 °C (12 lecturas >= 85), p95 75; sin throttling (contadores en 0) |
+
+- **Veredicto: el BIOS 1.47 era la causa** (con muy alta probabilidad). No se tocaron C-states ni la fuente.
+- Huecos del vigia de hasta 197 s, **todos durante las rafagas de CI** con presion de memoria (`psi_mem` avg10 hasta 84,
+  swap subiendo a 8 GB): el sistema iba lento, no congelado; despues siguio escribiendo.
+- **Swap lleno: 7.8 de 8 GB** desde la rafaga de la manana del 10-08 y nunca se libero (RAM disponible 20 GB). No tumba
+  el server, pero si otra rafaga necesita mas, el siguiente paso es el OOM killer. Pendiente: limitar la concurrencia
+  del CI o la memoria por contenedor, o agrandar el swap / usar zram.
+- **Nuevo con el BIOS 1.71:** errores ACPI `AE_AML_LOOP_TIMEOUT` en los metodos `\_GPE._LN` y `\OBDY` (0 con el
+  1.47, 54 en el primer arranque del 1.71, 260+ en este; se agrupan en las horas de carga). Es un defecto del firmware
+  de Lenovo al evaluar un evento ACPI; no ha tenido efecto visible. Vigilar si crece o si aparece junto a una caida.
+- Se puede relajar la instrumentacion (el `sync` cada 10 s del journal desgasta el NVMe) despues de una semana limpia.
