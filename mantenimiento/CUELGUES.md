@@ -462,3 +462,13 @@ Arranque del 2026-10-08 07:09:24, sin ninguna CAIDA nueva en `/var/log/arranques
   1.47, 54 en el primer arranque del 1.71, 260+ en este; se agrupan en las horas de carga). Es un defecto del firmware
   de Lenovo al evaluar un evento ACPI; no ha tenido efecto visible. Vigilar si crece o si aparece junto a una caida.
 - Se puede relajar la instrumentacion (el `sync` cada 10 s del journal desgasta el NVMe) despues de una semana limpia.
+
+### 2026-10-09 12:29 UTC: swap arreglado con zram (`~/arreglar-swap.sh`, corrido por el dueno)
+
+- Se vacio `/swap.img` (7.8 GB devueltos a la RAM, queda de respaldo con PRIO -1) y se agrego **zram** con PRIO 100,
+  `vm.swappiness=100`, `vm.page-cluster=0` (`/etc/sysctl.d/99-zram.conf`).
+- Trampa: instalar `systemd-zram-generator` levanta zram con SU configuracion (4 GB, `lzo-rle`) antes de escribir
+  `/etc/systemd/zram-generator.conf`; hace falta `systemctl restart systemd-zram-setup@zram0` para que tome
+  `ram / 2` y `zstd`. El script ya usa restart.
+- Se decidio NO quitar el swap del todo: en las rafagas del 10-08 la demanda llego a ~38 GB (30 de RAM + 8 de swap) y
+  sin swap el kernel mata procesos (CI, Postgres). Si tras una semana `/swap.img` sigue en 0, se puede quitar.
