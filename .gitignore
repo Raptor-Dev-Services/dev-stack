@@ -6,7 +6,7 @@ stack/.env
 stack/productos.conf
 # Llaves de prueba de Stripe de cada producto. Ver stack/stripe.conf.example.
 stack/stripe.conf
-stack/PUERTOS.local.md
+PUERTOS.local.md
 stack/minio.license
 # Datos del monitoreo (Seq, Prometheus, Grafana, Uptime Kuma), en bind mount junto al compose.
 stack/data/
