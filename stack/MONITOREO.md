@@ -1,0 +1,289 @@
+# Monitoreo: las carpetas de Grafana y Prometheus
+
+Como estan armadas, que se versiona y que no, lo que pasa **en el primer arranque en un
+servidor Linux** con los permisos, como se leen las metricas de la propia maquina
+(node-exporter) y como Uptime Kuma vigila contenedores sin tener el socket de Docker.
+
+El resumen de que es cada pieza y como se conecta un producto esta en el `README.md`, seccion
+*Monitoreo*. Este documento es la parte operativa.
+
+---
+
+## Dos tipos de carpeta, y no se mezclan
+
+| Carpeta | Que tiene | Se versiona | Se monta |
+|---|---|---|---|
+| `prometheus/` | `prometheus.yml`, la configuracion | **si** | solo lectura, en `/etc/prometheus` |
+| `grafana/provisioning/` | lo que Grafana crea solo al arrancar: fuentes de datos y tableros | **si** | solo lectura, en `/etc/grafana/provisioning` |
+| `data/prometheus/` | la base de series de tiempo (TSDB) | no | lectura y escritura, en `/prometheus` |
+| `data/grafana/` | `grafana.db` (usuarios, tableros creados a mano, preferencias) y plugins | no | lectura y escritura, en `/var/lib/grafana` |
+
+La regla que sale de la tabla: **lo que un clon limpio debe traer va en `prometheus/` o en
+`grafana/provisioning/`; lo que se genera al usar el stack cae en `data/`**. Si configuras algo
+a mano en la interfaz de Grafana, vive solo en `data/grafana/grafana.db` y no viaja al servidor.
+
+---
+
+## Primer arranque en un servidor Linux: los permisos
+
+En Windows y en macOS (Docker Desktop) no hace falta nada: el puente de archivos no aplica
+los permisos de Linux. **En un servidor Linux si**, y el fallo no es obvio.
+
+Cada imagen corre con un usuario propio, no con root:
+
+| Servicio | Usuario dentro del contenedor | UID:GID |
+|---|---|---|
+| Grafana | `grafana` | `472:0` |
+| Prometheus | `nobody` | `65534:65534` |
+| Seq | root | no requiere nada |
+| Uptime Kuma | root | no requiere nada |
+
+Si `data/grafana` o `data/prometheus` no existen, Docker las crea **como root** al primer `up`, y
+ninguno de los dos puede escribir en ellas:
+
+- Prometheus sale con `permission denied` sobre `queries.active`, queda `unhealthy`, y el `up`
+  termina en `dependency failed to start: container devstack-prometheus is unhealthy`.
+- Grafana ni arranca: depende de Prometheus. Si arrancara, fallaria igual con
+  `GF_PATHS_DATA='/var/lib/grafana' is not writable`.
+
+**Ya no hay que hacer nada a mano.** El servicio `permisos-init` del compose corre en cada `up`,
+crea las carpetas de `data/` y les pone el dueno correcto; Prometheus y Grafana esperan a que
+termine. Se ve en `docker logs devstack-permisos-init` (`==> permisos de data/ listos`) y queda
+como `Exited (0)`, que es lo correcto.
+
+Si alguna vez falla -por ejemplo, `data/` en un sistema de archivos que no admite `chown`, como
+un recurso compartido de red-, el arreglo manual es el mismo que hace el servicio:
+
+```sh
+sudo chown -R 472:0         data/grafana
+sudo chown -R 65534:65534   data/prometheus
+docker compose -f compose-dev.yaml up -d
+```
+
+Las carpetas **versionadas** (`prometheus/`, `grafana/provisioning/`) no necesitan `chown`: se
+montan en solo lectura y basta con que sean legibles para todos, que es como las deja `git clone`.
+
+---
+
+## Prometheus
+
+### Cambiar la configuracion
+
+Se edita `prometheus/prometheus.yml` y se reinicia. Antes de reiniciar, se valida: un error de
+sintaxis deja a Prometheus sin arrancar.
+
+```sh
+docker run --rm -v "$PWD/prometheus:/cfg:ro" --entrypoint /bin/promtool \
+  prom/prometheus:v3.15.0 check config /cfg/prometheus.yml
+docker compose -f compose-dev.yaml restart prometheus
+```
+
+El archivo **se versiona y el repo es publico**: no pongas nombres de productos. Casi nunca hace
+falta, porque las APIs empujan por OTLP y no se raspan.
+
+### Cuanto guarda
+
+`PROMETHEUS_RETENTION` en el `.env` (por omision `15d`). Pasado ese plazo borra lo mas viejo solo.
+Para ver cuanto ocupa: `du -sh data/prometheus`.
+
+### Respaldar y empezar de cero
+
+- **Respaldo:** `docker compose -f compose-dev.yaml stop prometheus`, copia `data/prometheus`,
+  y vuelve a levantarlo. Copiar la carpeta con Prometheus corriendo puede dejar una copia
+  inconsistente.
+- **De cero:** `stop prometheus`, `rm -rf data/prometheus/*`; `permisos-init` le devuelve el dueno en el siguiente `up`.
+
+Son metricas de un entorno de desarrollo o staging: en la mayoria de los casos perderlas no
+cuesta nada, y empezar de cero es mas barato que respaldar.
+
+---
+
+## Grafana
+
+### Lo que se provisiona
+
+`grafana/provisioning/` sigue la estructura que Grafana espera:
+
+```
+grafana/provisioning/
+  datasources/
+    prometheus.yml      la fuente de datos, apuntando a http://prometheus:9090
+  dashboards/
+    tableros.yml        el proveedor: carga todo lo de json/ en la carpeta "dev-stack"
+    json/
+      servidor.json               "Servidor": CPU, memoria, carga y disco, en una pantalla
+      servidor-detallado.json     "Servidor (detallado)": los 124 paneles de Node Exporter Full
+```
+
+La fuente de datos llega con `editable: false`, y los tableros con `allowUiUpdates: false`: se
+cambian en el archivo, no en la interfaz.
+
+### El tablero "Servidor", y por que no basta con "Node Exporter Full"
+
+**Un dashboard publico (compartido con externos) no resuelve variables de plantilla.** Quien
+lo abre sin sesion recibe las variables vacias, y cada panel que las usa falla con
+`Internal Server Error`. *Node Exporter Full* (ID 1860) depende de cuatro, incluida la fuente de
+datos misma (`${ds_prometheus}`): para ti se ve bien y para un externo todo sale en error.
+
+`servidor.json` esta hecho para compartirse: consultas fijas sobre `job="node"` e
+`instance="devstack-host"`, y la fuente por su uid, `devstack-prometheus`. Verificado haciendolo
+publico y consultando sus 10 paneles por la API publica, sin login. Para compartirlo:
+*Dashboards -> dev-stack -> Servidor -> Share -> Share externally*. El link sale con
+`GRAFANA_ROOT_URL`.
+
+El disco se agrupa por dispositivo y no por punto de montaje: el mismo disco puede aparecer
+montado en varias rutas, y `/` no existe igual en todas las maquinas.
+
+**"Servidor (detallado)"** es *Node Exporter Full* (ID 1860, rev 45) con el mismo arreglo: se
+quitaron sus cuatro variables y se escribieron fijos la fuente (`devstack-prometheus`), el job
+(`node`) y la instancia (`devstack-host`). Conserva sus 124 paneles y 16 filas. Verificado igual:
+publico, y sus 124 paneles responden por la API publica sin login. Es obra de rfmoz
+(https://github.com/rfmoz/grafana-dashboards), licencia LGPL-3.0, y asi lo dice su descripcion.
+
+Si un dia se quiere una revision nueva de 1860, se regenera igual: bajar el JSON, vaciar
+`templating.list` y reemplazar `${ds_prometheus}`, `$job` y `$node` por esos tres valores.
+Las variables `$__...` (como `$__rate_interval`) son de Grafana y si funcionan en publico.
+
+### Agregar un tablero que viaje con el repo
+
+Un tablero hecho a mano en la interfaz vive solo en `grafana.db`. Para que lo traiga cualquier
+clon:
+
+1. Arma el tablero en la interfaz, y exportalo: *Share* -> *Export* -> *Save to file* (JSON).
+2. Guarda el JSON en `grafana/provisioning/dashboards/json/<nombre>.json`.
+3. `docker compose -f compose-dev.yaml restart grafana` (o espera un minuto: el proveedor
+   revisa la carpeta cada 60 segundos).
+
+Al exportar, revisa que el JSON apunte a la fuente por su `uid`, `devstack-prometheus`, y que
+no lleve nombres de productos en los titulos: el repo es publico. Filtra por producto con una
+variable del tablero sobre la etiqueta `service_name` -- **salvo que el tablero se vaya a
+compartir con externos**: ahi, sin variables.
+
+### Respaldar y empezar de cero
+
+- **Respaldo:** `stop grafana`, copia `data/grafana/grafana.db`, levantalo. Es un SQLite: copiarlo
+  con Grafana escribiendo puede dejarlo corrupto.
+- **De cero:** `stop grafana`, `rm -rf data/grafana/*`; `permisos-init` le devuelve el dueno en el siguiente `up`. Al volver a
+  levantarlo recrea el usuario admin con `GRAFANA_ADMIN_PASSWORD` y la fuente de datos por
+  provisioning; se pierde lo que se hizo a mano en la interfaz.
+
+### La contrasena de admin
+
+`GRAFANA_ADMIN_USER` y `GRAFANA_ADMIN_PASSWORD` **solo aplican con `data/grafana` vacia**. Cambiarlos
+en el `.env` despues no hace nada. Para cambiarla con Grafana ya creado:
+
+```sh
+docker exec devstack-grafana grafana cli admin reset-admin-password '<nueva>'
+```
+
+---
+
+## node-exporter: las metricas de la maquina
+
+Es un servicio del mismo `compose-dev.yaml`, en la red `devstack` y **sin puerto publicado**.
+Prometheus lo lee con el job `node` de `prometheus/prometheus.yml` (`node-exporter:9100`,
+etiqueta `instance="devstack-host"`), y se mira en Grafana con el tablero **Node Exporter Full**
+(*Import*, ID `1860`).
+
+No guarda nada en `data/`: lee la maquina en vivo a traves de montajes de solo lectura
+(`/proc`, `/sys` y `/`) y de `pid: host`.
+
+| Lo que mide | Es de la maquina? |
+|---|---|
+| CPU, carga, memoria, swap | si |
+| Discos y sistemas de archivos | si (sin los de Docker, excluidos a proposito) |
+| Interfaces de red (`node_network_*`) | **no**: son las del contenedor, porque no usa la red del host |
+
+Lo de la red es la contraparte de no publicar el puerto. La otra forma -`network_mode: host`-
+si ve las interfaces del servidor, pero entonces Prometheus solo lo alcanza por
+`host.docker.internal`, y en un servidor Linux el firewall del host suele cortar el trafico que
+viene de la red de Docker: el target queda `down`. Tampoco hay que resolverlo publicandolo por
+el tunel de Cloudflare: el `/metrics` queda abierto a internet sin credenciales.
+
+**Si la maquina ya tenia un node_exporter por su cuenta**, sobra. Se borra *despues* de
+confirmar que el del stack esta `up`, para no quedarse sin metricas en medio:
+
+```sh
+curl -s localhost:9090/api/v1/targets | grep -oE '"scrapeUrl":"[^"]+"|"health":"[a-z]+"'
+docker stop node_exporter && docker rm node_exporter
+```
+
+En el log aparece un `ERROR` sobre `/run/udev/data`. Solo le quita a los discos las etiquetas
+descriptivas de udev; las metricas salen completas.
+
+---
+
+## Uptime Kuma: monitorear contenedores
+
+Ademas de sondear el `/health` de cada API, Kuma puede vigilar un contenedor por su nombre
+(monitor **Docker Container**: arriba, caido o reiniciandose). Para eso necesita la API de
+Docker, y **no se le monta el socket**: montarlo es darle root sobre la maquina -el `:ro`
+protege el archivo, no lo que la API deja hacer- a un servicio que sale por el tunel.
+
+Quien tiene el socket es `docker-socket-proxy`, en la red `devstack` y **sin puerto
+publicado**. Solo deja pasar lecturas de contenedores (`CONTAINERS=1`, `POST=0`): nada de
+start, stop, exec ni crear.
+
+### Darlo de alta en Kuma (una vez por maquina)
+
+Vive en `data/uptime-kuma`, no en el repo: en un servidor nuevo hay que repetirlo.
+
+1. **Settings -> Docker Hosts -> Setup Docker Host**.
+2. Tipo de conexion: **TCP / HTTP**.
+3. URL:
+
+   ```
+   http://docker-socket-proxy:2375
+   ```
+
+4. **Test** y guardar.
+
+Despues, cada monitor: tipo **Docker Container**, el Docker Host de arriba y el nombre exacto
+del contenedor (`miapp-api-staging`, `devstack-postgres`...), el de `docker ps`.
+
+En el servidor Kuma solo escucha en `127.0.0.1:3001`; desde tu maquina se entra con un tunel:
+
+```sh
+ssh -L 3001:127.0.0.1:3001 usuario@<servidor>    # y abrir http://localhost:3001
+```
+
+### Comprobar el proxy desde la red de Kuma
+
+`docker ps` no basta: el proxy no trae healthcheck, asi que dice `Up` sin `(healthy)` aunque
+no conteste. Estas tres pruebas corren con la red de Kuma, que es desde donde importa:
+
+```sh
+# 1. Lee contenedores: debe salir JSON (el "broken pipe" es del head, no un error)
+docker run --rm --network container:devstack-uptime-kuma curlimages/curl -s http://docker-socket-proxy:2375/containers/json | head -c 300; echo
+
+# 2. Una escritura se rechaza: debe dar 403. Apunta a Redis a proposito: si el proxy
+#    estuviera mal, lo reiniciaria, y Redis vuelve en un segundo.
+docker run --rm --network container:devstack-uptime-kuma curlimages/curl -s -o /dev/null -w '%{http_code}\n' \
+  -X POST http://docker-socket-proxy:2375/containers/devstack-redis/restart
+
+# 3. Lo que no es de contenedores tambien se rechaza: debe dar 403
+docker run --rm --network container:devstack-uptime-kuma curlimages/curl -s -o /dev/null -w '%{http_code}\n' http://docker-socket-proxy:2375/images/json
+```
+
+---
+
+## Diagnostico
+
+```sh
+docker compose -f compose-dev.yaml ps prometheus grafana
+docker compose -f compose-dev.yaml logs --tail 50 prometheus
+docker compose -f compose-dev.yaml logs --tail 50 grafana
+ls -ln data/                         # en Linux: el dueno debe ser 472 y 65534
+```
+
+| Sintoma | Causa |
+|---|---|
+| `up` termina con `container devstack-prometheus is unhealthy` | permisos de `data/prometheus`: mira `docker logs devstack-permisos-init` |
+| Grafana reiniciandose, log con `is not writable` | permisos de `data/grafana`: igual |
+| Grafana dice que la fuente de datos no responde | Prometheus no esta `healthy`; mira su log |
+| Las metricas de un producto no aparecen | el producto no tiene `Observability__MetricsOtlpEndpoint`, o apunta a `localhost` desde un contenedor (ahi es `http://prometheus:9090/...`) |
+| Target `node` en `down` | `docker logs devstack-node-exporter`; y que el job apunte a `node-exporter:9100`, no a `host.docker.internal` ni al tunel |
+| En la pagina de targets el link `http://node-exporter:9100/metrics` no abre | es normal: es la direccion desde Prometheus, no desde tu navegador. Lo que importa es la columna *State* |
+| Muestras descartadas como `out of order` | el lote llego con mas de 30 min de atraso; ver `out_of_order_time_window` en `prometheus.yml` |
+| Kuma: el **Test** del Docker Host falla | la URL apunta a `localhost`, a `/var/run/docker.sock` o lleva `https`; es `http://docker-socket-proxy:2375`. Si esta bien, `docker logs devstack-docker-socket-proxy` y la prueba 1 de arriba |
+| Kuma: un monitor Docker Container sale caido con el contenedor arriba | el nombre no es el de `docker ps` (sin la `/` inicial), o el contenedor se recreo con otro nombre |

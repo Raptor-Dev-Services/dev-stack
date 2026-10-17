@@ -1,0 +1,6 @@
+# Los scripts .sh corren DENTRO de contenedores Linux (Postgres init, MinIO init,
+# bajar-todo.sh): tienen que quedarse en LF siempre. Sin esto, un clon en Windows con
+# core.autocrlf=true los convierte a CRLF y el shebang revienta adentro del contenedor
+# (/bin/sh^M: bad interpreter: No such file or directory): Postgres no provisiona las
+# bases ni MinIO crea los buckets, y el fallo no apunta a la causa. (2026-09-28)
+*.sh text eol=lf

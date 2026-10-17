@@ -1,0 +1,13 @@
+[Unit]
+Description=Limpieza diaria de los runners de actions-runner-2, 05:00 de Ciudad de Mexico
+
+[Timer]
+# El server esta en UTC; con la zona explicita la hora no se mueve.
+OnCalendar=*-*-* 05:00:00 America/Mexico_City
+# Sin Persistent a proposito: si el server estaba apagado a las 05:00, NO se corre al arrancar, que es
+# justo cuando los jobs que se cortaron se relanzan.
+Persistent=false
+RandomizedDelaySec=0
+
+[Install]
+WantedBy=timers.target

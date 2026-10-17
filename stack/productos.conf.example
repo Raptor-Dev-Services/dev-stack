@@ -1,0 +1,33 @@
+# =============================================================================
+# productos.conf.example - Los productos que viven en este stack
+# =============================================================================
+# Copialo a `productos.conf` y pon una linea por producto. `productos.conf` NO se
+# versiona: es la unica parte del stack que sabe que productos existen.
+#
+# Lo leen los dos pasos de provisioning:
+#   - init/postgres/00-bases-y-roles.sh  -> una base y un rol owner por linea
+#   - init/minio/crear-buckets.sh        -> los buckets de cada linea
+#
+# Postgres solo lo lee con el volumen VACIO (primer arranque). Si agregas un producto
+# a un stack que ya tiene datos, crea su base a mano o recrea el volumen (`down -v`).
+#
+# Columnas, separadas por espacios:
+#
+#   base        nombre de la base de datos
+#   prefijo     prefijo de los roles: crea `<prefijo>_owner` y, si aplica, `<prefijo>_app`.
+#               La contrasena de desarrollo de cada rol es `<rol>_dev`.
+#   rls         si | no   -- si el producto usa Row Level Security con FORCE, el owner
+#               lleva BYPASSRLS para poder sembrar datos de varios tenants.
+#   app         no | conexion | dml
+#                 no        sin rol de aplicacion (la app entra con el owner)
+#                 conexion  crea `<prefijo>_app` con CONNECT; los GRANT sobre tablas los
+#                           pone el propio producto (migracion o script)
+#                 dml       ademas USAGE sobre public y SELECT/INSERT/UPDATE/DELETE por
+#                           omision sobre todo lo que cree el owner
+#   createrole  si | no   -- si una migracion del producto crea roles
+#   buckets     buckets de MinIO separados por coma, o `-` para ninguno
+#
+# base               prefijo            rls  app       createrole  buckets
+{{DB_PRODUCTO_A}}    {{PRODUCTO_A}}     no   no        no          {{PRODUCTO_A}}
+{{DB_PRODUCTO_B}}    {{PRODUCTO_B}}     si   dml       no          {{PRODUCTO_B}}
+{{DB_PRODUCTO_C}}    {{PRODUCTO_C}}     si   conexion  si          {{PRODUCTO_C}},{{PRODUCTO_C}}-adjuntos

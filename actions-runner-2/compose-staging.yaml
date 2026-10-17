@@ -1,0 +1,85 @@
+# =============================================================================
+# actions-runner-2/compose-staging.yaml - 4 runners de STAGING (bajan de Harbor y levantan)
+# =============================================================================
+# Para el server de STAGING. Estos runners NO compilan: hacen `docker pull` de Harbor de la imagen que
+# empujaron los de compose-build.yaml, corren las migraciones y `docker compose up` en staging. Por eso
+# bastan 4 y la maquina puede ser chica.
+#
+#     cp .env.example .env                              # una vez; RUNNER_TOKEN y los ids del host
+#     docker compose -f compose-staging.yaml up -d      # levanta los 4 (el primer arranque los registra)
+#     docker compose -f compose-staging.yaml logs -f
+#     docker compose -f compose-staging.yaml down       # siguen registrados; al volver no piden token
+#
+# Se registran con la etiqueta `staging` (RUNNER_ROLE, la agrega entrypoint.sh) ademas de las base
+# (self-hosted, Linux, X64) y las de RUNNER_LABELS. Un job de deploy la pide:
+#     runs-on: [self-hosted, linux, staging]
+#
+# Lo que esta maquina necesita en HOST_HOME: el `docker login` a Harbor (basta permiso de PULL), el
+# dev-stack (~/Docker/dev-stack) y los .env de staging de cada producto.
+#
+# Mismo diseno que ../actions-runner/compose.yaml (imagen oficial, socket de Docker, home del host en su
+# misma ruta, red host); el porque de cada cosa esta en el README de esta carpeta.
+# Ojo: montar el socket de Docker equivale a root en el host. Solo repos propios.
+# =============================================================================
+
+name: actions-runner-staging
+
+x-runner: &runner
+  image: ghcr.io/actions/actions-runner:${RUNNER_IMAGE_TAG:-latest}
+  # root SOLO para remapear uid/gid al arrancar; el runner corre como usuario normal (entrypoint.sh).
+  user: root
+  entrypoint: ["/bin/bash", "/entrypoint.sh"]
+  # tini como PID 1: reenvia el SIGTERM de `docker compose down` al runner para que suelte el job limpio.
+  init: true
+  restart: unless-stopped
+  stop_grace_period: 1m
+  network_mode: host
+  volumes:
+    - ./entrypoint.sh:/entrypoint.sh:ro
+    - /var/run/docker.sock:/var/run/docker.sock
+    # La imagen oficial trae el CLI de Docker pero NO el plugin de compose, y los deploys hacen
+    # `docker compose up`. Se monta el del host: mismo binario (estatico) y misma version que su daemon.
+    - ${DOCKER_COMPOSE_PLUGIN:?Falta DOCKER_COMPOSE_PLUGIN en actions-runner-2/.env}:/usr/local/lib/docker/cli-plugins/docker-compose:ro
+    - ${HOST_HOME:?Falta HOST_HOME en actions-runner-2/.env}:${HOST_HOME}
+
+x-runner-env: &runner-env
+  GITHUB_URL: ${GITHUB_URL:?Falta GITHUB_URL en actions-runner-2/.env}
+  # Solo hace falta en el PRIMER arranque de cada runner; despues puede quedar vacio.
+  RUNNER_TOKEN: ${RUNNER_TOKEN:-}
+  RUNNER_GROUP: ${RUNNER_GROUP:-Default}
+  RUNNER_ROLE: staging
+  RUNNER_LABELS: ${RUNNER_LABELS:-}
+  HOST_HOME: ${HOST_HOME}
+  RUNNERS_DIR: ${RUNNERS_DIR:?Falta RUNNERS_DIR en actions-runner-2/.env}
+  RUNNER_UID: ${RUNNER_UID:?Falta RUNNER_UID en actions-runner-2/.env}
+  RUNNER_GID: ${RUNNER_GID:?Falta RUNNER_GID en actions-runner-2/.env}
+  DOCKER_GID: ${DOCKER_GID:?Falta DOCKER_GID en actions-runner-2/.env}
+
+services:
+  staging-1:
+    <<: *runner
+    container_name: ${RUNNER_NAME_PREFIX:?Falta RUNNER_NAME_PREFIX en actions-runner-2/.env}-staging-1
+    environment:
+      <<: *runner-env
+      RUNNER_NAME: ${RUNNER_NAME_PREFIX}-staging-1
+
+  staging-2:
+    <<: *runner
+    container_name: ${RUNNER_NAME_PREFIX}-staging-2
+    environment:
+      <<: *runner-env
+      RUNNER_NAME: ${RUNNER_NAME_PREFIX}-staging-2
+
+  staging-3:
+    <<: *runner
+    container_name: ${RUNNER_NAME_PREFIX}-staging-3
+    environment:
+      <<: *runner-env
+      RUNNER_NAME: ${RUNNER_NAME_PREFIX}-staging-3
+
+  staging-4:
+    <<: *runner
+    container_name: ${RUNNER_NAME_PREFIX}-staging-4
+    environment:
+      <<: *runner-env
+      RUNNER_NAME: ${RUNNER_NAME_PREFIX}-staging-4

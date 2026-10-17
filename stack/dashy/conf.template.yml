@@ -1,0 +1,61 @@
+# =============================================================================
+# conf.template.yml - la pagina de inicio del stack (Dashy)
+# =============================================================================
+# NO se edita en la interfaz de Dashy: al arrancar, `arrancar.sh` genera el conf.yml real a
+# partir de este archivo, sustituyendo cada variable entre arrobas por su valor del .env, y le agrega al
+# final `productos.yml` si existe. Lo que se cambie desde la interfaz se pierde al reiniciar,
+# por eso esta desactivado.
+#
+# Este archivo se versiona y el repo es publico: aqui solo va la infraestructura. Los links
+# a las APIs y fronts de cada producto van en `productos.yml` (no versionado; ver
+# productos.example.yml).
+# =============================================================================
+pageInfo:
+  title: dev-stack
+  description: Infraestructura compartida en @DEVSTACK_HOST@
+
+appConfig:
+  theme: nord
+  layout: auto
+  iconSize: medium
+  statusCheck: true
+  statusCheckInterval: 60
+  hideComponents:
+    hideSettings: false
+    hideFooter: true
+  disableConfiguration: true
+  preventWriteToDisk: true
+  preventLocalSave: true
+
+sections:
+  - name: Monitoreo
+    icon: fas fa-chart-line
+    items:
+      - title: Grafana
+        description: Tableros sobre Prometheus
+        url: http://@DEVSTACK_HOST@:@GRAFANA_PORT@
+        icon: si-grafana
+      - title: Prometheus
+        description: Metricas (receptor OTLP en /api/v1/otlp/v1/metrics)
+        url: http://@DEVSTACK_HOST@:@PROMETHEUS_PORT@
+        icon: si-prometheus
+      - title: Seq
+        description: Logs estructurados
+        url: http://@DEVSTACK_HOST@:@SEQ_UI_PORT@
+        icon: fas fa-stream
+      - title: Uptime Kuma
+        description: Esta arriba o no
+        url: http://@DEVSTACK_HOST@:@UPTIME_KUMA_PORT@
+        icon: si-uptimekuma
+
+  - name: Infraestructura
+    icon: fas fa-server
+    items:
+      - title: MinIO
+        description: Consola de almacenamiento de objetos
+        url: http://@DEVSTACK_HOST@:@MINIO_CONSOLE_PORT@
+        icon: si-minio
+      - title: Mailpit
+        description: Bandeja del correo saliente de todos los productos
+        url: http://@DEVSTACK_HOST@:@MAILPIT_WEB_PORT@
+        icon: fas fa-envelope

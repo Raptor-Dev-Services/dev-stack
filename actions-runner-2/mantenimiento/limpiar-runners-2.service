@@ -1,0 +1,18 @@
+# PLANTILLA: instalar-limpiar-runners.sh reemplaza @USUARIO@ y @CARPETA@ con el usuario que corre sudo y la
+# ruta real de esta carpeta, porque la maquina de build y la de staging no tienen por que compartirlos.
+[Unit]
+Description=Vacia las carpetas de trabajo de los runners de actions-runner-2 que esten libres
+Documentation=file://@CARPETA@/../README.md
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+User=@USUARIO@
+Group=docker
+# La copia del repo que corre en esta maquina; `git pull` alli la actualiza.
+ExecStart=/bin/bash @CARPETA@/limpiar-runners.sh
+# Con runners ocupados reintenta cada 10 min, hasta 6 veces: en el peor caso, ~1 h.
+TimeoutStartSec=2h
+Nice=10
+IOSchedulingClass=idle

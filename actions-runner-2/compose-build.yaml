@@ -1,0 +1,112 @@
+# =============================================================================
+# actions-runner-2/compose-build.yaml - 8 runners de BUILD (compilan, prueban y empujan a Harbor)
+# =============================================================================
+# Para la maquina POTENTE. Estos runners hacen el trabajo pesado: checkout, build, pruebas, `docker build`
+# y `docker push` a Harbor. NO despliegan: eso lo hacen los de compose-staging.yaml, en el server de
+# staging, bajando de Harbor la imagen que estos empujaron.
+#
+#     cp .env.example .env                              # una vez; RUNNER_TOKEN y los ids del host
+#     docker compose -f compose-build.yaml up -d        # levanta los 8 (el primer arranque los registra)
+#     docker compose -f compose-build.yaml logs -f
+#     docker compose -f compose-build.yaml down         # siguen registrados; al volver no piden token
+#
+# Se registran con la etiqueta `build` (RUNNER_ROLE, la agrega entrypoint.sh) ademas de las base
+# (self-hosted, Linux, X64) y las de RUNNER_LABELS. Un job que solo deba correr aqui la pide:
+#     runs-on: [self-hosted, linux, build]
+#
+# Lo que esta maquina necesita en HOST_HOME: el `docker login` a Harbor (~/.docker/config.json) con
+# permiso de PUSH. No necesita el dev-stack ni los .env de staging.
+#
+# Mismo diseno que ../actions-runner/compose.yaml (imagen oficial, socket de Docker, home del host en su
+# misma ruta, red host); el porque de cada cosa esta en el README de esta carpeta.
+# Ojo: montar el socket de Docker equivale a root en el host. Solo repos propios.
+# =============================================================================
+
+name: actions-runner-build
+
+x-runner: &runner
+  image: ghcr.io/actions/actions-runner:${RUNNER_IMAGE_TAG:-latest}
+  # root SOLO para remapear uid/gid al arrancar; el runner corre como usuario normal (entrypoint.sh).
+  user: root
+  entrypoint: ["/bin/bash", "/entrypoint.sh"]
+  # tini como PID 1: reenvia el SIGTERM de `docker compose down` al runner para que suelte el job limpio.
+  init: true
+  restart: unless-stopped
+  stop_grace_period: 1m
+  network_mode: host
+  volumes:
+    - ./entrypoint.sh:/entrypoint.sh:ro
+    - /var/run/docker.sock:/var/run/docker.sock
+    # La imagen oficial no trae el plugin de compose; algunos builds lo usan (pruebas de integracion).
+    - ${DOCKER_COMPOSE_PLUGIN:?Falta DOCKER_COMPOSE_PLUGIN en actions-runner-2/.env}:/usr/local/lib/docker/cli-plugins/docker-compose:ro
+    - ${HOST_HOME:?Falta HOST_HOME en actions-runner-2/.env}:${HOST_HOME}
+
+x-runner-env: &runner-env
+  GITHUB_URL: ${GITHUB_URL:?Falta GITHUB_URL en actions-runner-2/.env}
+  # Solo hace falta en el PRIMER arranque de cada runner; despues puede quedar vacio.
+  RUNNER_TOKEN: ${RUNNER_TOKEN:-}
+  RUNNER_GROUP: ${RUNNER_GROUP:-Default}
+  RUNNER_ROLE: build
+  RUNNER_LABELS: ${RUNNER_LABELS:-}
+  HOST_HOME: ${HOST_HOME}
+  RUNNERS_DIR: ${RUNNERS_DIR:?Falta RUNNERS_DIR en actions-runner-2/.env}
+  RUNNER_UID: ${RUNNER_UID:?Falta RUNNER_UID en actions-runner-2/.env}
+  RUNNER_GID: ${RUNNER_GID:?Falta RUNNER_GID en actions-runner-2/.env}
+  DOCKER_GID: ${DOCKER_GID:?Falta DOCKER_GID en actions-runner-2/.env}
+
+services:
+  build-1:
+    <<: *runner
+    container_name: ${RUNNER_NAME_PREFIX:?Falta RUNNER_NAME_PREFIX en actions-runner-2/.env}-build-1
+    environment:
+      <<: *runner-env
+      RUNNER_NAME: ${RUNNER_NAME_PREFIX}-build-1
+
+  build-2:
+    <<: *runner
+    container_name: ${RUNNER_NAME_PREFIX}-build-2
+    environment:
+      <<: *runner-env
+      RUNNER_NAME: ${RUNNER_NAME_PREFIX}-build-2
+
+  build-3:
+    <<: *runner
+    container_name: ${RUNNER_NAME_PREFIX}-build-3
+    environment:
+      <<: *runner-env
+      RUNNER_NAME: ${RUNNER_NAME_PREFIX}-build-3
+
+  build-4:
+    <<: *runner
+    container_name: ${RUNNER_NAME_PREFIX}-build-4
+    environment:
+      <<: *runner-env
+      RUNNER_NAME: ${RUNNER_NAME_PREFIX}-build-4
+
+  build-5:
+    <<: *runner
+    container_name: ${RUNNER_NAME_PREFIX}-build-5
+    environment:
+      <<: *runner-env
+      RUNNER_NAME: ${RUNNER_NAME_PREFIX}-build-5
+
+  build-6:
+    <<: *runner
+    container_name: ${RUNNER_NAME_PREFIX}-build-6
+    environment:
+      <<: *runner-env
+      RUNNER_NAME: ${RUNNER_NAME_PREFIX}-build-6
+
+  build-7:
+    <<: *runner
+    container_name: ${RUNNER_NAME_PREFIX}-build-7
+    environment:
+      <<: *runner-env
+      RUNNER_NAME: ${RUNNER_NAME_PREFIX}-build-7
+
+  build-8:
+    <<: *runner
+    container_name: ${RUNNER_NAME_PREFIX}-build-8
+    environment:
+      <<: *runner-env
+      RUNNER_NAME: ${RUNNER_NAME_PREFIX}-build-8
